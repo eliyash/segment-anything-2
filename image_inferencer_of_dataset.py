@@ -52,7 +52,7 @@ def main():
     mask_generator = SAM2AutomaticMaskGenerator(sam2)
     print(f'after mask_generator {time.strftime("%Y-%m-%d %H:%M:%S")}')
 
-    images_folder = Path("~/datasets")
+    images_folder = Path("/home/ubuntu/datasets")
     output_folder = Path("output")
     output_folder.mkdir(exist_ok=True)
     for image_path in images_folder.iterdir():
