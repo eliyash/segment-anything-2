@@ -1,4 +1,5 @@
 import json
+import pickle
 import time
 
 import numpy as np
@@ -24,7 +25,7 @@ def main():
 
     # use opencv to iterate on frames of a video
 
-    video_path = Path('your_video_file.mp4')  # Replace with your video file path
+    video_path = Path('/home/ubuntu/videos_2019/6_20_19 (12).MP4')  # Replace with your video file path
 
     output_folder = Path("output") / video_path.stem
     output_folder.mkdir(exist_ok=True, parents=True)
@@ -44,9 +45,10 @@ def main():
         # If there are no more frames, break the loop
         if not ret:
             break
-        filename = output_folder / f'masks_{i}.png'
+        file_path = output_folder / f'masks_{i}.png'
         masks = mask_generator.generate(frame)
-        filename.write_text(json.dumps(masks))
+        with open(file_path, 'wb') as f:  # 'wb' for writing in binary mode
+            pickle.dump(masks, f)
         i += 1
 
 
