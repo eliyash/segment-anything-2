@@ -25,31 +25,32 @@ def main():
 
     # use opencv to iterate on frames of a video
 
-    video_path = Path('/home/ubuntu/videos_2019/6_20_19 (12).MP4')  # Replace with your video file path
+    video_root_path = Path('/home/ubuntu/videos_2019/')  # Replace with your video file path
+    for video_path in video_root_path.iterdir():
 
-    output_folder = Path("output") / video_path.stem
-    output_folder.mkdir(exist_ok=True, parents=True)
+        output_folder = Path("output") / video_path.stem
+        output_folder.mkdir(exist_ok=True, parents=True)
 
-    # Open the video file
-    video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
+        # Open the video file
+        video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
 
-    # Check if the video file was opened successfully
-    if not video_capture.isOpened():
-        print("Error opening video file")
+        # Check if the video file was opened successfully
+        if not video_capture.isOpened():
+            print("Error opening video file")
 
-    # Loop through the video frames
-    i = 0
-    while True:
-        # Read the next frame
-        ret, frame = video_capture.read()
-        # If there are no more frames, break the loop
-        if not ret:
-            break
-        file_path = output_folder / f'masks_{i}.pkl'
-        masks = mask_generator.generate(frame)
-        with open(file_path, 'wb') as f:  # 'wb' for writing in binary mode
-            pickle.dump(masks, f)
-        i += 1
+        # Loop through the video frames
+        i = 0
+        while True:
+            # Read the next frame
+            ret, frame = video_capture.read()
+            # If there are no more frames, break the loop
+            if not ret:
+                break
+            file_path = output_folder / f'masks_{i}.pkl'
+            masks = mask_generator.generate(frame)
+            with open(file_path, 'wb') as f:  # 'wb' for writing in binary mode
+                pickle.dump(masks, f)
+            i += 1
 
 
 if __name__ == '__main__':
