@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from PIL import Image
 from transformers import AutoProcessor, AutoModelForCausalLM
 import torch
 import cv2
@@ -41,12 +42,10 @@ def main():
     def run_florence2_on_image(image_array):
         return run_florence2(model, processor, image_array, task_prompt, text_input)
 
-
     video_path = Path('/home/ubuntu/videos_2019/6_20_19 (12).MP4')  # Replace with your video file path
 
     output_folder = Path("output") / 'florence2' / video_path.stem
     output_folder.mkdir(exist_ok=True, parents=True)
-
 
     # Open the video file
     video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
@@ -64,7 +63,7 @@ def main():
         if not ret:
             break
         file_path = output_folder / f'bboxs_{i}.png'
-        res_dict = run_florence2_on_image(frame)
+        res_dict = run_florence2_on_image(Image.open(frame))
         file_path.write_text(json.dumps(res_dict))
         i += 1
 
