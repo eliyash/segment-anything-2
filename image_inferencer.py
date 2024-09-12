@@ -3,6 +3,7 @@ import time
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
@@ -32,11 +33,11 @@ def show_anns(anns, borders=True):
 
 
 def main():
-    np.random.seed(3)
-    # device = 'cuda'
-    device = 'cpu'
-    sam2_checkpoint = "checkpoints/sam2_hiera_large.pt"
-    model_cfg = "sam2_hiera_l.yaml"
+    # np.random.seed(0)
+    device = 'cuda'
+    # device = 'cpu'
+    sam2_checkpoint = "checkpoints/sam2_hiera_tiny.pt"
+    model_cfg = "sam2_hiera_t.yaml"
     print(f'before build_sam2 {time.strftime("%Y-%m-%d %H:%M:%S")}')
     sam2 = build_sam2(model_cfg, sam2_checkpoint, device=device, apply_postprocessing=False)
     print(f'after build_sam2 {time.strftime("%Y-%m-%d %H:%M:%S")}')
@@ -47,14 +48,20 @@ def main():
 
     image = np.array(Image.open(image_path).convert("RGB"))
 
-    masks = mask_generator.generate(image)
-    print(f'after generate {time.strftime("%Y-%m-%d %H:%M:%S")}')
+    output_folder = Path("output")
+    output_folder.mkdir(exist_ok=True)
+    for i in range(10):
+        np.random.seed(3)
+        filename = output_folder / f'res_{i}.png'
+        masks = mask_generator.generate(image)
+        print(f'after generate {time.strftime("%Y-%m-%d %H:%M:%S")}')
 
-    plt.figure(figsize=(20, 20))
-    plt.imshow(image)
-    show_anns(masks)
-    plt.axis('off')
-    plt.show()
+        plt.figure(figsize=(20, 20))
+        plt.imshow(image)
+        show_anns(masks)
+        plt.axis('off')
+        plt.savefig(filename.as_posix(), bbox_inches='tight', pad_inches=0)
+        plt.close()  # Close the figure to free up memory
 
 
 if __name__ == '__main__':
