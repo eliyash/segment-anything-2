@@ -1,4 +1,5 @@
 import json
+import pickle
 import time
 
 import numpy as np
@@ -58,7 +59,9 @@ def main():
     for image_path in images_folder.iterdir():
         image = np.array(Image.open(image_path).convert("RGB"))
         masks = mask_generator.generate(image)
-        (output_folder / image_path.stem).write_text(json.dumps(masks))
+
+        with open(output_folder / image_path.stem, 'wb') as f:  # 'wb' for writing in binary mode
+            pickle.dump(masks, f)
         print(f'after generate {time.strftime("%Y-%m-%d %H:%M:%S")}')
 
 
