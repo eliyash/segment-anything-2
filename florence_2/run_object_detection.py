@@ -63,7 +63,7 @@ def main():
         if not ret:
             break
         file_path = output_folder / f'bboxs_{i}.png'
-        res_dict = run_florence2_on_image(Image.open(frame))
+        res_dict = run_florence2_on_image(Image.fromarray(frame))
         file_path.write_text(json.dumps(res_dict))
         i += 1
 
