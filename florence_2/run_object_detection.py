@@ -42,30 +42,31 @@ def main():
     def run_florence2_on_image(image_array):
         return run_florence2(model, processor, image_array, task_prompt, text_input)
 
-    video_path = Path('/home/ubuntu/videos_2019/6_20_19 (12).MP4')  # Replace with your video file path
+    video_root_path = Path('/home/ubuntu/videos_2019/')  # Replace with your video file path
+    for video_path in video_root_path.iterdir():
 
-    output_folder = Path("output") / 'florence2' / video_path.stem
-    output_folder.mkdir(exist_ok=True, parents=True)
+        output_folder = Path("output") / 'florence2' / video_path.stem
+        output_folder.mkdir(exist_ok=True, parents=True)
 
-    # Open the video file
-    video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
+        # Open the video file
+        video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
 
-    # Check if the video file was opened successfully
-    if not video_capture.isOpened():
-        print("Error opening video file")
+        # Check if the video file was opened successfully
+        if not video_capture.isOpened():
+            print("Error opening video file")
 
-    # Loop through the video frames
-    i = 0
-    while True:
-        # Read the next frame
-        ret, frame = video_capture.read()
-        # If there are no more frames, break the loop
-        if not ret:
-            break
-        file_path = output_folder / f'bboxs_{i}.json'
-        res_dict = run_florence2_on_image(Image.fromarray(frame))
-        file_path.write_text(json.dumps(res_dict))
-        i += 1
+        # Loop through the video frames
+        i = 0
+        while True:
+            # Read the next frame
+            ret, frame = video_capture.read()
+            # If there are no more frames, break the loop
+            if not ret:
+                break
+            file_path = output_folder / f'bboxs_{i}.json'
+            res_dict = run_florence2_on_image(Image.fromarray(frame))
+            file_path.write_text(json.dumps(res_dict))
+            i += 1
 
     # plot_bbox(image, results[task_prompt])
 
