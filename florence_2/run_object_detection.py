@@ -62,7 +62,7 @@ def main():
         # If there are no more frames, break the loop
         if not ret:
             break
-        file_path = output_folder / f'bboxs_{i}.png'
+        file_path = output_folder / f'bboxs_{i}.json'
         res_dict = run_florence2_on_image(Image.fromarray(frame))
         file_path.write_text(json.dumps(res_dict))
         i += 1

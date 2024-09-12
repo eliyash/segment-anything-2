@@ -45,7 +45,7 @@ def main():
         # If there are no more frames, break the loop
         if not ret:
             break
-        file_path = output_folder / f'masks_{i}.png'
+        file_path = output_folder / f'masks_{i}.pkl'
         masks = mask_generator.generate(frame)
         with open(file_path, 'wb') as f:  # 'wb' for writing in binary mode
             pickle.dump(masks, f)
