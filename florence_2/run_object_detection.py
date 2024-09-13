@@ -73,9 +73,9 @@ def main():
     task_prompt = '<CAPTION_TO_PHRASE_GROUNDING>'
 
     video_root_path = Path('/home/ubuntu/videos_2019/')
-
     # run_florence2_on_image_by_prompt(video_root_path, task_prompt, "chimpanzee")
-    run_florence2_on_image_by_prompt(video_root_path, task_prompt, "face")
+    for body_part in ['face', 'ear', 'eye', 'nose', 'mouth']:
+        run_florence2_on_image_by_prompt(video_root_path, task_prompt, body_part)
 
 
 if __name__ == '__main__':
