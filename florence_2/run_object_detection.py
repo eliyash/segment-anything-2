@@ -60,9 +60,11 @@ def run_florence2_on_image_by_prompt(video_root_path, task_prompt, text_input):
             if not ret:
                 break
             file_path = output_folder / f'bboxs_{i}.json'
+            i += 1
+            if file_path.exists():
+                continue
             res_dict = run_florence2_on_image(Image.fromarray(frame))
             file_path.write_text(json.dumps(res_dict))
-            i += 1
 
     # plot_bbox(image, results[task_prompt])
 

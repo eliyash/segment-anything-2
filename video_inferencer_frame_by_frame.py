@@ -47,10 +47,12 @@ def main():
             if not ret:
                 break
             file_path = output_folder / f'masks_{i}.pkl'
+            i += 1
+            if file_path.exists():
+                continue
             masks = mask_generator.generate(frame)
             with open(file_path, 'wb') as f:  # 'wb' for writing in binary mode
                 pickle.dump(masks, f)
-            i += 1
 
 
 if __name__ == '__main__':
