@@ -31,10 +31,7 @@ def run_florence2(model, processor, image, task_prompt, text_input=None):
     return parsed_answer
 
 
-def main():
-    task_prompt = '<CAPTION_TO_PHRASE_GROUNDING>'
-    text_input = "chimpanzee"
-
+def run_florence2_on_image_by_prompt(video_root_path, task_prompt, text_input):
     model_id = 'microsoft/Florence-2-large'
     model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, torch_dtype='auto').eval().cuda()
     processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
@@ -42,10 +39,9 @@ def main():
     def run_florence2_on_image(image_array):
         return run_florence2(model, processor, image_array, task_prompt, text_input)
 
-    video_root_path = Path('/home/ubuntu/videos_2019/')  # Replace with your video file path
     for video_path in video_root_path.iterdir():
 
-        output_folder = Path("output") / 'florence2' / video_path.stem
+        output_folder = Path("output") / 'florence2' / text_input / video_path.stem
         output_folder.mkdir(exist_ok=True, parents=True)
 
         # Open the video file
@@ -69,6 +65,15 @@ def main():
             i += 1
 
     # plot_bbox(image, results[task_prompt])
+
+
+def main():
+    task_prompt = '<CAPTION_TO_PHRASE_GROUNDING>'
+
+    video_root_path = Path('/home/ubuntu/videos_2019/')
+
+    # run_florence2_on_image_by_prompt(video_root_path, task_prompt, "chimpanzee")
+    run_florence2_on_image_by_prompt(video_root_path, task_prompt, "face")
 
 
 if __name__ == '__main__':
