@@ -67,30 +67,28 @@ def main():
 
     body_part_texts = ['ear', 'eye', 'nose', 'mouth', 'face']
     full_body_text = 'chimpanzee'
+    caption_to_phrase_groundings_by_name = {element: element for element in body_part_texts + [full_body_text]}
 
-    open_vocabulary_detection_texts = [
-        "how many chimpanzees are in the image?",
-        "in case the chimpanzees interact with each other tell me what they do?"
-    ]
+    open_vocabulary_detection_texts = {
+        'query_count': "how many chimpanzees are in the image?",
+        'query_actions': "in case the chimpanzees interact with each other tell me what they do?"
+    }
 
     task_prompts_with_inputs = {
-        '<CAPTION_TO_PHRASE_GROUNDING>': body_part_texts + [full_body_text],
-        # '<OPEN_VOCABULARY_DETECTION>': open_vocabulary_detection_texts,
-        '<DENSE_REGION_CAPTION>': [None],
-        '<DETAILED_CAPTION>': [None],
-        '<MORE_DETAILED_CAPTION>': [None]
-    }
+        'CAPTION_TO_PHRASE_GROUNDING': caption_to_phrase_groundings_by_name,
+        '<OPEN_VOCABULARY_DETECTION>': open_vocabulary_detection_texts,
+        '<DENSE_REGION_CAPTION>': {'dense_region_caption': None},
+        '<DETAILED_CAPTION>': {'detailed_caption': None},
+        '<MORE_DETAILED_CAPTION>': {'more_detailed_caption': None}
+    }  # type: dict[str, dict[str, str]]
 
     video_root_path = Path('/home/ubuntu/videos_2019/')
     for video_path in video_root_path.iterdir():
         for task_prompt, text_inputs in task_prompts_with_inputs.items():
-            for text_input in text_inputs:
+            for full_task_name, text_input in text_inputs.items():
                 def run_florence2_on_image(image_array):
-                    return run_florence2(model, processor, image_array, task_prompt, text_input)
-
-                # TODO: fix name in more general way
-                data_name = text_input if text_input is not None else task_prompt[1:-1].lower()
-                run_florence2_on_image_by_prompt(run_florence2_on_image, video_path, data_name)
+                    return run_florence2(model, processor, image_array, f'{task_prompt}', text_input)
+                run_florence2_on_image_by_prompt(run_florence2_on_image, video_path, full_task_name)
 
 
 if __name__ == '__main__':
