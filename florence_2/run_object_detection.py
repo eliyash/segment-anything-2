@@ -31,51 +31,66 @@ def run_florence2(model, processor, image, task_prompt, text_input=None):
     return parsed_answer
 
 
-def run_florence2_on_image_by_prompt(video_root_path, task_prompt, text_input):
-    model_id = 'microsoft/Florence-2-large'
-    model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, torch_dtype='auto').eval().cuda()
-    processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+def run_florence2_on_image_by_prompt(inferencer, video_path, data_name):
+    output_folder = Path("output") / 'florence2' / data_name / video_path.stem
+    output_folder.mkdir(exist_ok=True, parents=True)
 
-    def run_florence2_on_image(image_array):
-        return run_florence2(model, processor, image_array, task_prompt, text_input)
+    # Open the video file
+    video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
 
-    for video_path in video_root_path.iterdir():
+    # Check if the video file was opened successfully
+    if not video_capture.isOpened():
+        print("Error opening video file")
 
-        output_folder = Path("output") / 'florence2' / text_input / video_path.stem
-        output_folder.mkdir(exist_ok=True, parents=True)
-
-        # Open the video file
-        video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
-
-        # Check if the video file was opened successfully
-        if not video_capture.isOpened():
-            print("Error opening video file")
-
-        # Loop through the video frames
-        i = 0
-        while True:
-            # Read the next frame
-            ret, frame = video_capture.read()
-            # If there are no more frames, break the loop
-            if not ret:
-                break
-            file_path = output_folder / f'bboxs_{i}.json'
-            i += 1
-            if file_path.exists():
-                continue
-            res_dict = run_florence2_on_image(Image.fromarray(frame))
-            file_path.write_text(json.dumps(res_dict))
+    # Loop through the video frames
+    i = 0
+    while True:
+        # Read the next frame
+        ret, frame = video_capture.read()
+        # If there are no more frames, break the loop
+        if not ret:
+            break
+        file_path = output_folder / f'bboxs_{i}.json'
+        i += 1
+        if file_path.exists():
+            continue
+        res_dict = inferencer(Image.fromarray(frame))
+        file_path.write_text(json.dumps(res_dict))
 
     # plot_bbox(image, results[task_prompt])
 
 
 def main():
-    task_prompt = '<CAPTION_TO_PHRASE_GROUNDING>'
+    model_id = 'microsoft/Florence-2-large'
+    model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, torch_dtype='auto').eval().cuda()
+    processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+
+    body_part_texts = ['ear', 'eye', 'nose', 'mouth', 'face']
+    full_body_text = 'chimpanzee'
+
+    open_vocabulary_detection_texts = [
+        "how many chimpanzees are in the image?",
+        "in case the chimpanzees interact with each other tell me what they do?"
+    ]
+
+    task_prompts_with_inputs = {
+        '<CAPTION_TO_PHRASE_GROUNDING>': body_part_texts + [full_body_text],
+        # '<OPEN_VOCABULARY_DETECTION>': open_vocabulary_detection_texts,
+        '<DENSE_REGION_CAPTION>': [None],
+        '<DETAILED_CAPTION>': [None],
+        '<MORE_DETAILED_CAPTION>': [None]
+    }
 
     video_root_path = Path('/home/ubuntu/videos_2019/')
-    for body_part in ['ear', 'eye', 'nose', 'mouth', 'face']:
-        run_florence2_on_image_by_prompt(video_root_path, task_prompt, body_part)
-    run_florence2_on_image_by_prompt(video_root_path, task_prompt, "chimpanzee")
+    for video_path in video_root_path.iterdir():
+        for task_prompt, text_inputs in task_prompts_with_inputs.items():
+            for text_input in text_inputs:
+                def run_florence2_on_image(image_array):
+                    return run_florence2(model, processor, image_array, task_prompt, text_input)
+
+                # TODO: fix name in more general way
+                data_name = text_input if text_input is not None else task_prompt[1:-1].lower()
+                run_florence2_on_image_by_prompt(run_florence2_on_image, video_path, data_name)
 
 
 if __name__ == '__main__':
