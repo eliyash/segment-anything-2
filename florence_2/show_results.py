@@ -66,8 +66,10 @@ def get_all_annotation_paths(annotation_root, current_frame_ind, video_path):
 
 
 def show_florence2_results(video_root_path, annotation_root):
-    # for video_path in video_root_path.iterdir():
-        video_path = video_root_path / '5_21_19 (1).MTS'
+    for video_path in video_root_path.iterdir():
+        # video_path = video_root_path / '5_21_19 (1).MTS'
+        time_in_seconds = 30
+
         # Open the video file
         video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
 
@@ -75,8 +77,12 @@ def show_florence2_results(video_root_path, annotation_root):
         if not video_capture.isOpened():
             print("Error opening video file")
 
-        # Loop through the video frames
-        current_frame_ind = 1000
+        # Get the frames per second (FPS) of the video
+        fps = video_capture.get(cv2.CAP_PROP_FPS)
+
+        # Calculate the frame number corresponding to the time
+        current_frame_ind = int(time_in_seconds * fps)
+
         # start from frame i
         # Set the frame number to start from
         video_capture.set(cv2.CAP_PROP_POS_FRAMES, current_frame_ind)
