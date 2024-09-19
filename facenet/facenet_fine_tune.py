@@ -11,7 +11,7 @@ from torchvision import datasets, transforms
 import numpy as np
 import os
 
-root_dir = Path(r'C:\Workspace\ChimpanzeesThesis\faces_images')
+root_dir = Path(r'/home/ubuntu/faces_work')
 data_dir = root_dir / 'individual_faces_dataset'
 out_dir = root_dir / 'training'
 
