@@ -1,4 +1,7 @@
-from facenet_pytorch import MTCNN, InceptionResnetV1, fixed_image_standardization, training
+from datetime import datetime
+from pathlib import Path
+
+from facenet_pytorch import InceptionResnetV1, fixed_image_standardization, training
 import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch import optim
@@ -8,7 +11,9 @@ from torchvision import datasets, transforms
 import numpy as np
 import os
 
-data_dir = '../data/test_images'
+root_dir = Path(r'C:\Workspace\ChimpanzeesThesis\faces_images')
+data_dir = root_dir / 'individual_faces_dataset'
+out_dir = root_dir / 'training'
 
 batch_size = 32
 epochs = 8
@@ -16,29 +21,19 @@ workers = 0 if os.name == 'nt' else 8
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print('Running on device: {}'.format(device))
 
-mtcnn = MTCNN(
-    image_size=160, margin=0, min_face_size=20,
-    thresholds=[0.6, 0.7, 0.7], factor=0.709, post_process=True,
-    device=device
-)
+train_name = datetime.now().strftime('train__%Y%m%d_%H%M%S')
 
-dataset = datasets.ImageFolder(data_dir, transform=transforms.Resize((512, 512)))
-dataset.samples = [
-    (p, p.replace(data_dir, data_dir + '_cropped'))
-    for p, _ in dataset.samples
-]
+model_folder = out_dir / train_name
+# get_time_formated for file name
 
-loader = DataLoader(
-    dataset,
-    num_workers=workers,
-    batch_size=batch_size,
-    collate_fn=training.collate_pil
-)
 
-for i, (x, y) in enumerate(loader):
-    mtcnn(x, save_path=y)
-    print('\rBatch {} of {}'.format(i + 1, len(loader)), end='')
-
+trans = transforms.Compose([
+    np.float32,
+    transforms.ToTensor(),
+    transforms.Resize((512, 512)),
+    fixed_image_standardization
+])
+dataset = datasets.ImageFolder(data_dir.as_posix(), transform=trans)
 resnet = InceptionResnetV1(
     classify=True,
     pretrained='vggface2',
@@ -48,12 +43,6 @@ resnet = InceptionResnetV1(
 optimizer = optim.Adam(resnet.parameters(), lr=0.001)
 scheduler = MultiStepLR(optimizer, [5, 10])
 
-trans = transforms.Compose([
-    np.float32,
-    transforms.ToTensor(),
-    fixed_image_standardization
-])
-dataset = datasets.ImageFolder(data_dir + '_cropped', transform=trans)
 img_inds = np.arange(len(dataset))
 np.random.shuffle(img_inds)
 train_inds = img_inds[:int(0.8 * len(img_inds))]
@@ -107,4 +96,7 @@ for epoch in range(epochs):
         writer=writer
     )
 
+# save netiwrk to
+model_folder.mkdir(parents=True, exist_ok=True)
+torch.save(resnet.state_dict(), model_folder / 'model.pt')
 writer.close()

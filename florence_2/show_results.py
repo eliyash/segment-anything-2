@@ -3,6 +3,8 @@ from pathlib import Path
 
 import cv2
 
+from florence_2.read_interaction_csv import read_interation_data
+
 ALL_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (125, 120, 0), (0, 125, 120), (120, 0, 125), (85, 85, 85)]
 ALL_BODY_PARTS = ['chimpanzee', 'face', 'ear']
 COLORS_DICT = {part: ALL_COLORS[color_ind] for color_ind, part in enumerate(ALL_BODY_PARTS)}
@@ -67,8 +69,11 @@ def get_all_annotation_paths(annotation_root, current_frame_ind, video_path):
 
 def show_florence2_results(video_root_path, annotation_root):
     for video_path in video_root_path.iterdir():
-        # video_path = video_root_path / '5_21_19 (1).MTS'
-        time_in_seconds = 30
+        if video_path.name != '5_21_19 (1).MTS':
+            continue
+
+        interation_data = read_interation_data()
+        video_interation_datas = interation_data[video_path.stem]
 
         # Open the video file
         video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
@@ -77,35 +82,42 @@ def show_florence2_results(video_root_path, annotation_root):
         if not video_capture.isOpened():
             print("Error opening video file")
 
-        # Get the frames per second (FPS) of the video
-        fps = video_capture.get(cv2.CAP_PROP_FPS)
+        for video_interation_data in video_interation_datas:
+            s_id, t_id, start_sec, end_sec = video_interation_data
+            # Get the frames per second (FPS) of the video
+            fps = video_capture.get(cv2.CAP_PROP_FPS)
 
-        # Calculate the frame number corresponding to the time
-        current_frame_ind = int(time_in_seconds * fps)
+            # Calculate the frame number corresponding to the time
+            current_frame_ind = int(start_sec * fps)
+            last_frame_ind = int(end_sec * fps)
 
-        # start from frame i
-        # Set the frame number to start from
-        video_capture.set(cv2.CAP_PROP_POS_FRAMES, current_frame_ind)
+            # Set the frame number to start from
+            video_capture.set(cv2.CAP_PROP_POS_FRAMES, current_frame_ind)
 
-        while True:
-            # Read the next frame
-            ret, frame = video_capture.read()
-            # If there are no more frames, break the loop
-            if not ret:
-                break
+            while True:
+                # Read the next frame
+                ret, frame = video_capture.read()
+                # If there are no more frames, break the loop
+                if not ret:
+                    break
 
-            all_annotation_file_paths = get_all_annotation_paths(annotation_root, current_frame_ind, video_path)
+                all_annotation_file_paths = get_all_annotation_paths(annotation_root, current_frame_ind, video_path)
 
-            current_frame_ind += 1
+                current_frame_ind += 1
 
-            if not all([f.exists() for f in all_annotation_file_paths.values()]):
-                break
-            res_dicts = {n: json.loads(f.read_text()) for n, f in all_annotation_file_paths.items()}
+                if current_frame_ind > last_frame_ind:
+                    break
 
-            list_of_data = validate_data(res_dicts)
-            frame_with_bboxs = monkey_show_filtered(frame, list_of_data)
-            cv2.imshow('image', frame_with_bboxs)
-            cv2.waitKey(10)
+                if not all([f.exists() for f in all_annotation_file_paths.values()]):
+                    break
+                res_dicts = {n: json.loads(f.read_text()) for n, f in all_annotation_file_paths.items()}
+
+                list_of_data = validate_data(res_dicts)
+                frame_with_bboxs = monkey_show_filtered(frame, list_of_data)
+                # write s_id and t_id on the top of the image
+                cv2.putText(frame_with_bboxs, f's_id: {s_id}, t_id: {t_id}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                cv2.imshow('image', frame_with_bboxs)
+                cv2.waitKey(10)
 
 
 def main():
