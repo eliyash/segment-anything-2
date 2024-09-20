@@ -34,20 +34,20 @@ def main():
     # Augmentation pipeline for training
     train_transforms = transforms.Compose([
         np.float32,
-        transforms.Resize((512, 512)),
         transforms.ToTensor(),
-        # transforms.RandomHorizontalFlip(),  # Random horizontal flip
-        # transforms.RandomRotation(10),  # Random rotation
-        # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  # Random color jitter
-        # transforms.RandomResizedCrop(512, scale=(0.8, 1.0)),  # Random crop and resize
+        transforms.Resize((512, 512)),
+        transforms.RandomHorizontalFlip(),  # Random horizontal flip
+        transforms.RandomRotation(10),  # Random rotation
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  # Random color jitter
+        transforms.RandomResizedCrop(512, scale=(0.8, 1.0)),  # Random crop and resize
         fixed_image_standardization
     ])
 
     # Validation transforms (no augmentation, only resizing)
     val_transforms = transforms.Compose([
         np.float32,
-        transforms.Resize((512, 512)),
         transforms.ToTensor(),
+        transforms.Resize((512, 512)),
         fixed_image_standardization
     ])
 
