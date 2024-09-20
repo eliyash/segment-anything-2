@@ -39,7 +39,7 @@ def main():
         transforms.RandomHorizontalFlip(),  # Random horizontal flip
         transforms.RandomRotation(10),  # Random rotation
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  # Random color jitter
-        transforms.RandomResizedCrop(512, scale=(0.8, 1.0)),  # Random crop and resize
+        # transforms.RandomResizedCrop(512, scale=(0.8, 1.0)),  # Random crop and resize
         fixed_image_standardization
     ])
 
@@ -88,7 +88,7 @@ def main():
         'acc': training.accuracy
     }
 
-    writer = SummaryWriter()
+    writer = SummaryWriter(model_folder)
     writer.iteration, writer.interval = 0, 10
 
     print('\n\nInitial')
