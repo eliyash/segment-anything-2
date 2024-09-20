@@ -21,8 +21,8 @@ def main():
     out_dir = root_dir / 'training'
 
     batch_size = 32
-    epochs = 8
-    workers = 0 if is_windows else 8
+    epochs = 100
+    workers = 0 if is_windows else 4
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     print('Running on device: {}'.format(device))
 
