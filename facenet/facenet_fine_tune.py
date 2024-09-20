@@ -21,7 +21,7 @@ def main():
     out_dir = root_dir / 'training'
 
     batch_size = 32
-    epochs = 100
+    epochs = 1000
     workers = 0 if is_windows else 4
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     print('Running on device: {}'.format(device))
@@ -31,39 +31,56 @@ def main():
     model_folder = out_dir / train_name
     model_folder.mkdir(parents=True, exist_ok=True)
 
-    trans = transforms.Compose([
+    # Augmentation pipeline for training
+    train_transforms = transforms.Compose([
+        transforms.RandomHorizontalFlip(),  # Random horizontal flip
+        transforms.RandomRotation(10),  # Random rotation
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  # Random color jitter
+        transforms.RandomResizedCrop(512, scale=(0.8, 1.0)),  # Random crop and resize
         np.float32,
         transforms.ToTensor(),
-        transforms.Resize((512, 512)),
         fixed_image_standardization
     ])
-    dataset = datasets.ImageFolder(data_dir.as_posix(), transform=trans)
+
+    # Validation transforms (no augmentation, only resizing)
+    val_transforms = transforms.Compose([
+        np.float32,
+        transforms.Resize((512, 512)),
+        transforms.ToTensor(),
+        fixed_image_standardization
+    ])
+
+    # Load datasets with the respective transforms
+    train_dataset = datasets.ImageFolder(data_dir.as_posix(), transform=train_transforms)
+    val_dataset = datasets.ImageFolder(data_dir.as_posix(), transform=val_transforms)
+
     resnet = InceptionResnetV1(
         classify=True,
         pretrained='vggface2',
-        num_classes=len(dataset.class_to_idx)
+        num_classes=len(train_dataset.class_to_idx)
     ).to(device)
 
     optimizer = optim.Adam(resnet.parameters(), lr=0.001)
     scheduler = MultiStepLR(optimizer, [5, 10])
 
-    img_inds = np.arange(len(dataset))
+    img_inds = np.arange(len(train_dataset))
     np.random.shuffle(img_inds)
     train_inds = img_inds[:int(0.8 * len(img_inds))]
     val_inds = img_inds[int(0.8 * len(img_inds)):]
 
     train_loader = DataLoader(
-        dataset,
+        train_dataset,
         num_workers=workers,
         batch_size=batch_size,
         sampler=SubsetRandomSampler(train_inds)
     )
     val_loader = DataLoader(
-        dataset,
+        val_dataset,
         num_workers=workers,
         batch_size=batch_size,
         sampler=SubsetRandomSampler(val_inds)
     )
+
     loss_fn = torch.nn.CrossEntropyLoss()
     metrics = {
         'fps': training.BatchTimer(),
