@@ -88,7 +88,7 @@ def main():
         'acc': training.accuracy
     }
 
-    writer = SummaryWriter(model_folder)
+    writer = SummaryWriter(str(model_folder))
     writer.iteration, writer.interval = 0, 10
 
     print('\n\nInitial')
@@ -100,26 +100,32 @@ def main():
         writer=writer
     )
 
+    best_val_loss = None
     for epoch in range(epochs):
         print('\nEpoch {}/{}'.format(epoch + 1, epochs))
         print('-' * 10)
 
         resnet.train()
-        training.pass_epoch(
+        train_loss, train_dict = training.pass_epoch(
             resnet, loss_fn, train_loader, optimizer, scheduler,
             batch_metrics=metrics, show_running=True, device=device,
             writer=writer
         )
 
         resnet.eval()
-        training.pass_epoch(
+        validation_loss, validation_dict = training.pass_epoch(
             resnet, loss_fn, val_loader,
             batch_metrics=metrics, show_running=True, device=device,
             writer=writer
         )
+
+        if not best_val_loss or validation_loss < best_val_loss:
+            best_val_loss = validation_loss
+            torch.save(resnet.state_dict(), model_folder / 'model_best.pt')
+
         info = {'epoch': epoch}
         (model_folder / 'info.json').write_text(json.dumps(info, indent=4))
-        torch.save(resnet.state_dict(), model_folder / 'model.pt')
+        torch.save(resnet.state_dict(), model_folder / 'model_last.pt')
 
     writer.close()
 
