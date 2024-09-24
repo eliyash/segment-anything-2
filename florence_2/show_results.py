@@ -83,7 +83,10 @@ def show_florence2_results(video_root_path, annotation_root):
             print("Error opening video file")
 
         for video_interation_data in video_interation_datas:
-            s_id, t_id, start_sec, end_sec = video_interation_data
+            s_id = video_interation_data['recipient_id']
+            t_id = video_interation_data['signaler_id']
+            start_sec = video_interation_data['start_seconds']
+            end_sec = video_interation_data['end_seconds']
             # Get the frames per second (FPS) of the video
             fps = video_capture.get(cv2.CAP_PROP_FPS)
 
