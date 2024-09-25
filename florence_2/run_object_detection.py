@@ -32,7 +32,7 @@ def run_florence2(model, processor, image, task_prompt, text_input=None):
 
 
 def run_florence2_on_image_by_prompt(inferencer, video_path, data_name):
-    output_folder = Path("output") / 'florence2' / data_name / video_path.stem
+    output_folder = Path("./output") / data_name / video_path.stem
     output_folder.mkdir(exist_ok=True, parents=True)
 
     # Open the video file
@@ -65,9 +65,11 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, torch_dtype='auto').eval().cuda()
     processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
 
-    body_part_texts = ['ear', 'eye', 'nose', 'mouth', 'face']
-    full_body_text = 'chimpanzee'
-    caption_to_phrase_groundings_by_name = {element: element for element in body_part_texts + [full_body_text]}
+    body_part_texts = ['face', 'head', 'ear']
+    body_part_tasks = {element: element for element in body_part_texts}
+    full_body_task = {'body': 'chimpanzee'}
+
+    caption_to_phrase_groundings_by_name = {**body_part_tasks, **full_body_task}
 
     open_vocabulary_detection_texts = {
         'query_count': "how many chimpanzees are in the image?",
@@ -75,19 +77,20 @@ def main():
     }
 
     task_prompts_with_inputs = {
-        'CAPTION_TO_PHRASE_GROUNDING': caption_to_phrase_groundings_by_name,
+        '<CAPTION_TO_PHRASE_GROUNDING>': caption_to_phrase_groundings_by_name,
         '<OPEN_VOCABULARY_DETECTION>': open_vocabulary_detection_texts,
-        '<DENSE_REGION_CAPTION>': {'dense_region_caption': None},
-        '<DETAILED_CAPTION>': {'detailed_caption': None},
-        '<MORE_DETAILED_CAPTION>': {'more_detailed_caption': None}
+        # '<DENSE_REGION_CAPTION>': {'dense_region_caption': None},
+        # '<DETAILED_CAPTION>': {'detailed_caption': None},
+        # '<MORE_DETAILED_CAPTION>': {'more_detailed_caption': None}
     }  # type: dict[str, dict[str, str]]
 
-    video_root_path = Path('/home/ubuntu/videos_2019/')
+    # video_root_path = Path('/home/ubuntu/videos_2019/')
+    video_root_path = Path('/home/ubuntu/per_signal_videos/')
     for video_path in video_root_path.iterdir():
         for task_prompt, text_inputs in task_prompts_with_inputs.items():
             for full_task_name, text_input in text_inputs.items():
                 def run_florence2_on_image(image_array):
-                    return run_florence2(model, processor, image_array, f'{task_prompt}', text_input)
+                    return run_florence2(model, processor, image_array, task_prompt, text_input)
                 run_florence2_on_image_by_prompt(run_florence2_on_image, video_path, full_task_name)
 
 

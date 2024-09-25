@@ -28,6 +28,9 @@ def save_video_parts(video_path, out_path, param_dicts):
         video_out_path = out_path / f'{file_stem}.mp4'
         metadata_out_path = out_path / f'{file_stem}.json'
 
+        if video_out_path.exists() and metadata_out_path.exists():
+            # print(f"Skipping video part: {video_out_path}")
+            continue
         # Open the VideoWriter to save the part
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(video_out_path.as_posix(), fourcc, fps, (width, height))
