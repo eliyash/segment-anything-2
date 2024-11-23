@@ -3,10 +3,10 @@ from pathlib import Path
 
 import cv2
 
-from florence_2.read_interaction_csv import read_interation_data
+from florence_2.read_interaction_csv import read_interation_data, NOT_NAMES
 
 ALL_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (125, 120, 0), (0, 125, 120), (120, 0, 125), (85, 85, 85)]
-ALL_BODY_PARTS = ['chimpanzee', 'face', 'ear']
+ALL_BODY_PARTS = ['body', 'face', 'ear', 'head']
 COLORS_DICT = {part: ALL_COLORS[color_ind] for color_ind, part in enumerate(ALL_BODY_PARTS)}
 
 
@@ -42,7 +42,8 @@ def validate_data(dict_of_all_bbox_dicts):
     # check if bbox of ear at least 2 times smaller than bbox of face in each axis
     # stages: frst we will match each full body to face and ear checking face and ears bbox are mostly inside full body bbox
     # after we got match for each chimpanzee parts, we will check soze validity
-    full_body_bboxs = dict_of_all_bbox_dicts['chimpanzee']['<CAPTION_TO_PHRASE_GROUNDING>']['bboxes']
+    # check if dict has all parts in it, but can have more
+    full_body_bboxs = dict_of_all_bbox_dicts['body']['<CAPTION_TO_PHRASE_GROUNDING>']['bboxes']
     face_bboxs = dict_of_all_bbox_dicts['face']['<CAPTION_TO_PHRASE_GROUNDING>']['bboxes']
     ear_bboxs = dict_of_all_bbox_dicts['ear']['<CAPTION_TO_PHRASE_GROUNDING>']['bboxes']
     mapped_parts_for_each_chimpanzee = []
@@ -51,7 +52,7 @@ def validate_data(dict_of_all_bbox_dicts):
         matched_ear_bboxs = []
         for face_bbox in face_bboxs:
             matched_ear_bboxs.extend(look_for_match(face_bbox, ear_bboxs))
-        mapped_parts_for_each_chimpanzee.append({'chimpanzee': [full_body_bbox], 'face': matched_face_bboxs, 'ear': matched_ear_bboxs})
+        mapped_parts_for_each_chimpanzee.append({'body': [full_body_bbox], 'face': matched_face_bboxs, 'ear': matched_ear_bboxs})
 
     return mapped_parts_for_each_chimpanzee
 
@@ -67,68 +68,82 @@ def get_all_annotation_paths(annotation_root, current_frame_ind, video_path):
     return all_annotation_file_paths
 
 
-def show_florence2_results(video_root_path, annotation_root):
-    for video_path in video_root_path.iterdir():
-        if video_path.name != '5_21_19 (1).MTS':
-            continue
+def show_florence2_results(video_file_paths, annotation_root):
+    dict_results_path = Path(r'C:\Workspace\ChimpanzeesThesis\outputs\signal_frames_data')
+    dict_results_path.mkdir(exist_ok=True, parents=True)
+    results_dict = {}
+    for video_path in video_file_paths:
+        results_dict[video_path.name] = {}
+        case_info_path = video_path.parent / f'{video_path.stem}.json'
+        case_info = json.loads(case_info_path.read_text())
 
-        interation_data = read_interation_data()
-        video_interation_datas = interation_data[video_path.stem]
+        s_id = case_info['recipient_id']
+        t_id = case_info['signaler_id']
+        if s_id in NOT_NAMES or t_id in NOT_NAMES:
+            print(f"Skipping {s_id}, {t_id}")
+            continue
 
         # Open the video file
         video_capture = cv2.VideoCapture(video_path.as_posix())  # Replace with your video file path
 
         # Check if the video file was opened successfully
         if not video_capture.isOpened():
-            print("Error opening video file")
+            print(f"Error opening video file: {video_path.stem}")
+            continue
 
-        for video_interation_data in video_interation_datas:
-            s_id = video_interation_data['recipient_id']
-            t_id = video_interation_data['signaler_id']
-            start_sec = video_interation_data['start_seconds']
-            end_sec = video_interation_data['end_seconds']
-            # Get the frames per second (FPS) of the video
-            fps = video_capture.get(cv2.CAP_PROP_FPS)
+        # start_sec = video_interation_data['start_seconds']
+        # end_sec = video_interation_data['end_seconds']
+        # Get the frames per second (FPS) of the video
+        # fps = video_capture.get(cv2.CAP_PROP_FPS)
+        # wait_time = 1000.0 / fps
 
-            # Calculate the frame number corresponding to the time
-            current_frame_ind = int(start_sec * fps)
-            last_frame_ind = int(end_sec * fps)
+        # # Calculate the frame number corresponding to the time
+        # current_frame_ind = int(start_sec * fps)
+        # last_frame_ind = int(end_sec * fps)
+        #
+        # # Set the frame number to start from
+        # video_capture.set(cv2.CAP_PROP_POS_FRAMES, current_frame_ind)
+        current_frame_ind = 0
+        while True:
+            # Read the next frame
+            ret, frame = video_capture.read()
+            # If there are no more frames, break the loop
+            if not ret:
+                break
 
-            # Set the frame number to start from
-            video_capture.set(cv2.CAP_PROP_POS_FRAMES, current_frame_ind)
+            all_annotation_file_paths = get_all_annotation_paths(annotation_root, current_frame_ind, video_path)
 
-            while True:
-                # Read the next frame
-                ret, frame = video_capture.read()
-                # If there are no more frames, break the loop
-                if not ret:
-                    break
 
-                all_annotation_file_paths = get_all_annotation_paths(annotation_root, current_frame_ind, video_path)
+            if not all([f.exists() for f in all_annotation_file_paths.values()]):
+                break
+            res_dicts = {n: json.loads(f.read_text()) for n, f in all_annotation_file_paths.items()}
+            list_of_data = validate_data(res_dicts)
 
-                current_frame_ind += 1
+            if list_of_data is None:
+                continue
 
-                if current_frame_ind > last_frame_ind:
-                    break
+            if len(list_of_data) >= 2 or not len(filter(lambda data: len(data['face']), list_of_data)) >= 2:
+                print(f"Skipping frame: {video_path.stem}")
+                continue
 
-                if not all([f.exists() for f in all_annotation_file_paths.values()]):
-                    break
-                res_dicts = {n: json.loads(f.read_text()) for n, f in all_annotation_file_paths.items()}
-
-                list_of_data = validate_data(res_dicts)
-                frame_with_bboxs = monkey_show_filtered(frame, list_of_data)
-                # write s_id and t_id on the top of the image
-                cv2.putText(frame_with_bboxs, f's_id: {s_id}, t_id: {t_id}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
-                cv2.imshow('image', frame_with_bboxs)
-                cv2.waitKey(10)
+            results_dict[video_path.name][current_frame_ind] = list_of_data
+            (dict_results_path / 'results_dict.json').write_text(json.dumps(results_dict, indent=4))
+            current_frame_ind += 1
+            continue
+            frame_with_bboxs = monkey_show_filtered(frame, list_of_data)
+            # write s_id and t_id on the top of the image
+            cv2.putText(frame_with_bboxs, f's_id: {s_id}, t_id: {t_id}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+            cv2.imshow('image', frame_with_bboxs)
+            cv2.waitKey(10)
+        video_capture.release()
 
 
 def main():
-    drive_path = Path('D:/') if Path('D:/').exists() else Path('E:/')
-    video_root_path = drive_path / 'videos_2019'
-    annotation_root = Path(r'C:\Workspace\ChimpanzeesThesis\outputs\florence2_17_9_24\home\ubuntu\segment-anything-2\florence_2\output\florence2')
+    video_root_path = Path('D:/per_signal_videos')
+    annotation_root = Path(r'C:\Workspace\ChimpanzeesThesis\outputs\florence2_by_signals__26_9_24\home\ubuntu\segment-anything-2\florence_2\output')
 
-    show_florence2_results(video_root_path, annotation_root)
+    video_file_paths = [path for path in video_root_path.iterdir() if path.suffix == '.mp4']
+    show_florence2_results(video_file_paths, annotation_root)
 
 
 if __name__ == '__main__':

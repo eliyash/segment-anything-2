@@ -1,5 +1,6 @@
 import time
-
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt

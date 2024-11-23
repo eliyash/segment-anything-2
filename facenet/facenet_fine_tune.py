@@ -1,21 +1,37 @@
 import json
+import os
 from datetime import datetime
 from pathlib import Path
-
-from facenet_pytorch import InceptionResnetV1, fixed_image_standardization, training
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch import optim
 from torch.optim.lr_scheduler import MultiStepLR
-from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
-import numpy as np
-import os
+from facenet_pytorch import InceptionResnetV1, fixed_image_standardization, training
+from sklearn.metrics import confusion_matrix
+import wandb
 
+def compute_confusion_matrix(resnet, val_loader, device):
+    all_preds = []
+    all_labels = []
+
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = resnet(images)
+            _, preds = torch.max(outputs, 1)
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
+    cm = confusion_matrix(all_labels, all_preds)
+    return cm, all_labels, all_preds
 
 def main():
-    is_windows = os.name == 'nt'
+    # Initialize W&B
+    wandb.init(project="your_project_name", name="detection_logging")
 
+    is_windows = os.name == 'nt'
     root_dir = Path(r'C:\Workspace\ChimpanzeesThesis\faces_images') if is_windows else Path(r'/home/ubuntu/faces_work')
     data_dir = root_dir / 'individual_faces_dataset'
     out_dir = root_dir / 'training'
@@ -27,23 +43,23 @@ def main():
     print('Running on device: {}'.format(device))
 
     train_name = datetime.now().strftime('train__%Y%m%d_%H%M%S')
-
     model_folder = out_dir / train_name
     model_folder.mkdir(parents=True, exist_ok=True)
+
+    log_file_path = model_folder / 'training_logs.json'
+    logs = []
 
     # Augmentation pipeline for training
     train_transforms = transforms.Compose([
         np.float32,
         transforms.ToTensor(),
         transforms.Resize((512, 512)),
-        transforms.RandomHorizontalFlip(),  # Random horizontal flip
-        transforms.RandomRotation(10),  # Random rotation
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  # Random color jitter
-        # transforms.RandomResizedCrop(512, scale=(0.8, 1.0)),  # Random crop and resize
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
         fixed_image_standardization
     ])
 
-    # Validation transforms (no augmentation, only resizing)
     val_transforms = transforms.Compose([
         np.float32,
         transforms.ToTensor(),
@@ -51,7 +67,6 @@ def main():
         fixed_image_standardization
     ])
 
-    # Load datasets with the respective transforms
     train_dataset = datasets.ImageFolder(data_dir.as_posix(), transform=train_transforms)
     val_dataset = datasets.ImageFolder(data_dir.as_posix(), transform=val_transforms)
 
@@ -88,47 +103,64 @@ def main():
         'acc': training.accuracy
     }
 
-    writer = SummaryWriter(str(model_folder))
-    writer.iteration, writer.interval = 0, 10
-
-    print('\n\nInitial')
-    print('-' * 10)
-    resnet.eval()
-    training.pass_epoch(
-        resnet, loss_fn, val_loader,
-        batch_metrics=metrics, show_running=True, device=device,
-        writer=writer
-    )
-
     best_val_loss = None
     for epoch in range(epochs):
         print('\nEpoch {}/{}'.format(epoch + 1, epochs))
         print('-' * 10)
 
+        # Train phase
         resnet.train()
-        train_loss, train_dict = training.pass_epoch(
+        train_loss, train_metrics = training.pass_epoch(
             resnet, loss_fn, train_loader, optimizer, scheduler,
-            batch_metrics=metrics, show_running=True, device=device,
-            writer=writer
+            batch_metrics=metrics, show_running=True, device=device
         )
 
+        # Validation phase
         resnet.eval()
-        validation_loss, validation_dict = training.pass_epoch(
+        validation_loss, validation_metrics = training.pass_epoch(
             resnet, loss_fn, val_loader,
-            batch_metrics=metrics, show_running=True, device=device,
-            writer=writer
+            batch_metrics=metrics, show_running=True, device=device
         )
 
+        # Compute confusion matrix for validation
+        cm, all_labels, all_preds = compute_confusion_matrix(resnet, val_loader, device)
+
+        # Log to W&B: Confusion Matrix, Train & Validation Loss/Accuracy
+        class_names = list(train_dataset.class_to_idx.keys())
+        wandb.log({
+            "train_loss": train_loss,
+            "val_loss": validation_loss,
+            "train_accuracy": train_metrics['acc'],
+            "val_accuracy": validation_metrics['acc'],
+            "confusion_matrix": wandb.plot.confusion_matrix(
+                probs=None,
+                y_true=all_labels,
+                preds=all_preds,
+                class_names=class_names
+            )
+        })
+
+        # Save logs to file
+        epoch_log = {
+            'epoch': epoch + 1,
+            'train_loss': train_loss,
+            'val_loss': validation_loss,
+            'train_accuracy': train_metrics['acc'],
+            'val_accuracy': validation_metrics['acc'],
+        }
+        logs.append(epoch_log)
+        with open(log_file_path, 'w') as log_file:
+            json.dump(logs, log_file, indent=4)
+
+        # Save model checkpoints
         if not best_val_loss or validation_loss < best_val_loss:
             best_val_loss = validation_loss
             torch.save(resnet.state_dict(), model_folder / 'model_best.pt')
 
-        info = {'epoch': epoch}
-        (model_folder / 'info.json').write_text(json.dumps(info, indent=4))
         torch.save(resnet.state_dict(), model_folder / 'model_last.pt')
 
-    writer.close()
-
+    # End W&B run
+    wandb.finish()
 
 if __name__ == '__main__':
     main()
