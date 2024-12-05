@@ -1,8 +1,8 @@
-#path: C:\Users\Eliahu\Downloads\coco_datasets  # dataset root dir
-path: /coco/
-train: val2017.txt # train2017.txt  # train images (relative to 'path') 118287 images
-val: val2017.txt  # val images (relative to 'path') 5000 images
-test: val2017.txt # test-dev2017.txt  # 20288 of 40670 images, submit to https://competitions.codalab.org/competitions/20794
+path: C:\Users\Eliahu\Downloads\coco_datasets\chimps  # for inference
+#path: /coco/  # for train
+train: train.txt # train2017.txt  # train images (relative to 'path') 118287 images
+val: val.txt  # val images (relative to 'path') 5000 images
+test: val.txt # test-dev2017.txt  # 20288 of 40670 images, submit to https://competitions.codalab.org/competitions/20794
 
 # Classes
 names:
