@@ -3,14 +3,12 @@ import time
 from pathlib import Path
 
 import cv2
-import numpy as np
 import torch
+import inference_on_full_videos
 
 from models.common import DetectMultiBackend
-from utils.general import (check_img_size, non_max_suppression, scale_boxes, xyxy2xywh)
-from utils.plots import Annotator, colors
+from utils.general import check_img_size
 from utils.torch_utils import select_device
-from utils.augmentations import letterbox
 
 
 @torch.no_grad()
@@ -47,31 +45,14 @@ def run(
             im0s = cv2.imread(str(img_path))
             assert im0s is not None, f"Image Not Found {img_path}"
             # Resize and pad image
-            im = letterbox(im0s, imgsz, stride=stride, auto=pt)[0]
-            # Convert to RGB, to 3xHxW, float
-            im = im.transpose((2, 0, 1))[::-1]
-            im = np.ascontiguousarray(im)
-            im = torch.from_numpy(im).to(device)
-            im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
-            im /= 255  # 0 - 255 to 0.0 - 1.0
-            if len(im.shape) == 3:
-                im = im[None]  # expand for batch dim
 
-            pred = model(im, augment=augment)
-            pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
+            im, pred = inference_on_full_videos.inference_image(
+                im0s, model, imgsz, conf_thres, iou_thres, max_det, device, classes, agnostic_nms, augment
+            )
 
-            for i, det in enumerate(pred):  # per image
-                p = img_path
-                annotator = Annotator(im0s, line_width=line_thickness, example=str(names))
-                if len(det):
-                    det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0s.shape).round()
-                    for *xyxy, conf, cls in reversed(det):
-                        c = int(cls)  # integer class
-                        label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
-                        annotator.box_label(xyxy, label, color=colors(c, True))
+            im0s = inference_on_full_videos.add_pred_to_image(im0s, im, pred, names, line_thickness, hide_labels, hide_conf)
 
-                im0s = annotator.result()
-                cv2.imwrite(str(output_path / f'{p.stem}_detected{p.suffix}'), im0s)
+            cv2.imwrite(str(output_path / f'{img_path.stem}_detected{img_path.suffix}'), im0s)
 
 
 def parse_opt():
@@ -100,6 +81,6 @@ if __name__ == "__main__":
     opt = parse_opt()
 
     opt.weights = r"C:\Users\Eliahu\Downloads\coco_datasets\chimps\end_of_train\weights\best.pt"
-    opt.output_path = r"C:\Workspace\ChimpanzeesThesis\segment-anything-2\yolov9-main\runs\mytest_frames_collection_end_of_train"
+    opt.output_path = r"C:\Workspace\ChimpanzeesThesis\segment-anything-2\yolov9-main\runs\mytest_frames_collection_end_of_train_refactor"
     opt.source = r"D:\frames_collection"
     run(**vars(opt))
