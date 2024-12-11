@@ -32,7 +32,6 @@ class FaceDataset(Dataset):
 
         return image, label
 
-
 # Data transformations
 data_transform = transforms.Compose([
     transforms.Resize((299, 299)),  # Resize images
@@ -80,6 +79,37 @@ best_val_loss = float('inf')
 # Training loop
 num_epochs = 1000  # Adjust as needed
 for epoch in range(num_epochs):
+    # Validation phase
+    model.eval()   # Set model to evaluation mode
+    optimizer.eval()
+    val_loss = 0.0
+    correct_classifications = 0
+    total_samples = 0
+    with torch.no_grad():
+        for images, labels in val_loader:
+            outputs = model(images)
+            # outputs = outputs.logits
+            loss = criterion(outputs, labels)
+            val_loss += loss.item()
+
+            # Calculate accuracy
+            _, predicted = torch.max(outputs.data, 1)
+            total_samples += labels.size(0)
+            correct_classifications += (predicted == labels).sum().item()
+
+    val_loss /= len(val_loader)
+    accuracy = 100 * correct_classifications / total_samples
+
+    print(
+        f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}, Val Accuracy: {accuracy:.2f}%'
+    )
+
+    # Save the model if it has the best validation loss so far
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        torch.save(model.state_dict(), out_dir / 'best_face_recognition_model.pth')
+        print("saving model...")
+
     # Training phase
     model.train()  # Set model to training mode
     optimizer.train()
@@ -95,23 +125,6 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
 
-    # Validation phase
-    model.eval()   # Set model to evaluation mode
-    optimizer.eval()
-    val_loss = 0.0
-    with torch.no_grad():  # No need to calculate gradients during validation
-        for images, labels in val_loader:
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            val_loss += loss.item()
-
-    val_loss /= len(val_loader)  # Average validation loss
-
-    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}')
-
-    # Save the model if it has the best validation loss so far
-    if val_loss < best_val_loss:
-        best_val_loss = val_loss
-        torch.save(model.state_dict(), out_dir / 'best_face_recognition_model.pth')
+        print(f'.', end='')
 
 print("Training complete. Best model saved as 'best_face_recognition_model.pth'")
