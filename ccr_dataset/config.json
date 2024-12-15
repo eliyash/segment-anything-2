@@ -1,0 +1,23 @@
+{
+  "dataset_dir":"C:/Workspace/ChimpanzeesThesis/Count Crop and Recognise dataset/data",
+  "img_fmt": "%08d.png",
+  "metadata_dir": ".",
+  "img_width": -1,
+  "fps": -1,
+
+  "face": {
+    "sample_every_nth_frame": 3,
+    "crop_margin": 0.1
+  },
+
+  "body": {
+    "sample_every_nth_frame": 3,
+    "crop_margin": 0.1
+  },
+
+  "frame": {
+    "sample_every_nth_frame": 3
+  }
+
+}
+
