@@ -1,6 +1,8 @@
 import os
 import random
-# import pdb
+from pathlib import Path
+
+import cv2
 import pandas as pd
 from torch.utils.data import Dataset
 from PIL import Image, ImageDraw
@@ -86,38 +88,69 @@ class DetectionDataset(BaseDataset):
 
         return img
 
-
     def visualise(self, idx):
         sample = self.data.iloc[idx]
-        path = os.path.join(self.img_dir, str(sample.year), sample.video, self.img_fmt % sample.frame)
-        img = Image.open(path)
-        img_width, img_height = img.size
+        frame_index = sample.frame
+
+        path = os.path.join(self.img_dir, str(sample.year), sample.video, self.img_fmt % frame_index)
+        frame = Image.open(path)
+
+        img = Image.fromarray(frame)
         draw = ImageDraw.Draw(img)
-        draw.rectangle([(sample.x * img_width, sample.y*img_height), ((sample.x+sample.w)*img_width, (sample.y+sample.h)*img_height)], width=1)
-        draw.text((sample.x, sample.y), sample.label)
-        iterator=1
-        while True:
-            sample_tmp = self.data.iloc[idx-1]
-            if sample_tmp.frame != sample.frame:
-                break
-            target = self.class_map[sample.label]
-            draw.rectangle([(sample_tmp.x * img_width, sample_tmp.y * img_height),
-                            ((sample_tmp.x + sample_tmp.w) * img_width, (sample_tmp.y + sample_tmp.h) * img_height)], width=1)
-            draw.text((sample_tmp.x, sample_tmp.y), sample_tmp.label)
-            iterator += 1
-        iterator = 1
-        while True:
-            sample_tmp = self.data.iloc[idx + 1]
-            if sample_tmp.frame != sample.frame:
-                break
-            target = self.class_map[sample.label]
-            draw.rectangle([(sample_tmp.x * img_width, sample_tmp.y * img_height),
-                            ((sample_tmp.x + sample_tmp.w) * img_width, (sample_tmp.y + sample_tmp.h) * img_height)],
-                           width=1)
-            draw.text((sample_tmp.x, sample_tmp.y), sample_tmp.label)
-            iterator += 1
+
+        img_width, img_height = img.size
+        # scaling fix, as annotations were scaled by width in both axes
+        scaling_horizontal_val = img_width / img_height
+
+        # find all frame annotations
+        prev_iterator = 1
+        while self.data.iloc[idx-prev_iterator].frame == frame_index:
+            prev_iterator += 1
+
+        next_iterator = 1
+        while self.data.iloc[idx+next_iterator].frame == frame_index:
+            next_iterator += 1
+
+        for index in range(idx-prev_iterator, idx+next_iterator+1):
+            sample = self.data.iloc[index]
+            x, y, w, h = sample.x, sample.y * scaling_horizontal_val, sample.w, sample.h
+            draw.rectangle([(x * img_width, y*img_height), ((x+w)*img_width, (y+h)*img_height)], width=1)
+            draw.text((x * img_width, y*img_height), sample.label)
 
         return img
+
+    def get_frame_from_video_with_annotations(self, idx):
+        root = Path(self.img_dir).parent / 'videos'
+
+        sample = self.data.iloc[idx]
+        video_name = sample.video
+        video_year = sample.year
+        frame_index = sample.frame
+        video_path = root / str(video_year) / video_name
+        cap = cv2.VideoCapture(video_path.as_posix())
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+        ret, frame = cap.read()
+        cap.release()
+
+        img_height, img_width, _ = frame.shape
+        scaling_horizontal_val = img_width / img_height
+
+        # find all frame annotations
+        prev_iterator = 1
+        while self.data.iloc[idx-prev_iterator].frame == frame_index:
+            prev_iterator += 1
+
+        next_iterator = 1
+        while self.data.iloc[idx+next_iterator].frame == frame_index:
+            next_iterator += 1
+
+        bboxes = {}
+        for index in range(idx-prev_iterator, idx+next_iterator+1):
+            sample = self.data.iloc[index]
+            x, y, w, h = sample.x, sample.y * scaling_horizontal_val, sample.w, sample.h
+            bboxes[sample.label] = (x, y, w, h)
+
+        return frame, (video_name, video_year, frame_index), bboxes
 
 
 class FrameDataset(BaseDataset):

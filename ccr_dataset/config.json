@@ -1,7 +1,7 @@
 {
   "dataset_dir":"C:/Workspace/ChimpanzeesThesis/Count Crop and Recognise dataset/data",
   "img_fmt": "%08d.png",
-  "metadata_dir": ".",
+  "metadata_dir": "C:/Workspace/ChimpanzeesThesis/Count Crop and Recognise dataset/metadata",
   "img_width": -1,
   "fps": -1,
 
