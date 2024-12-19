@@ -49,7 +49,7 @@ def predict_classes(image_nps):
     model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
 
     # Load the saved model weights
-    model.load_state_dict(torch.load(out_dir / 'best_face_recognition_model.pth'))
+    model.load_state_dict(torch.load(out_dir / 'best_face_recognition_model_with_augmentations.pth'))
     model.eval()  # Set the model to evaluation mode
 
     # --- Create the class name mapping ---

@@ -29,15 +29,15 @@ def compute_confusion_matrix(resnet, val_loader, device):
 
 def main():
     # Initialize W&B
-    wandb.init(project="your_project_name", name="detection_logging")
+    # wandb.init(project="your_project_name", name="detection_logging")
 
     is_windows = os.name == 'nt'
     root_dir = Path(r'C:\Workspace\ChimpanzeesThesis\faces_images') if is_windows else Path(r'/home/ubuntu/faces_work')
     data_dir = root_dir / 'individual_faces_dataset'
     out_dir = root_dir / 'training'
 
-    batch_size = 32
-    epochs = 1000
+    batch_size = 16
+    epochs = 10
     workers = 0 if is_windows else 4
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     print('Running on device: {}'.format(device))
@@ -75,6 +75,8 @@ def main():
         pretrained='vggface2',
         num_classes=len(train_dataset.class_to_idx)
     ).to(device)
+
+    resnet.load_state_dict(torch.load(r"C:\Workspace\ChimpanzeesThesis\outputs\facenet_train__20240920_211541\model_best.pt"), strict=False)
 
     optimizer = optim.Adam(resnet.parameters(), lr=0.001)
     scheduler = MultiStepLR(optimizer, [5, 10])
@@ -127,18 +129,18 @@ def main():
 
         # Log to W&B: Confusion Matrix, Train & Validation Loss/Accuracy
         class_names = list(train_dataset.class_to_idx.keys())
-        wandb.log({
-            "train_loss": train_loss,
-            "val_loss": validation_loss,
-            "train_accuracy": train_metrics['acc'],
-            "val_accuracy": validation_metrics['acc'],
-            "confusion_matrix": wandb.plot.confusion_matrix(
-                probs=None,
-                y_true=all_labels,
-                preds=all_preds,
-                class_names=class_names
-            )
-        })
+        # wandb.log({
+        #     "train_loss": train_loss,
+        #     "val_loss": validation_loss,
+        #     "train_accuracy": train_metrics['acc'],
+        #     "val_accuracy": validation_metrics['acc'],
+        #     "confusion_matrix": wandb.plot.confusion_matrix(
+        #         probs=None,
+        #         y_true=all_labels,
+        #         preds=all_preds,
+        #         class_names=class_names
+        #     )
+        # })
 
         # Save logs to file
         epoch_log = {
@@ -148,7 +150,7 @@ def main():
             'train_accuracy': train_metrics['acc'],
             'val_accuracy': validation_metrics['acc'],
         }
-        logs.append(epoch_log)
+        logs.append({k: float(v) for k, v in epoch_log.items()})
         with open(log_file_path, 'w') as log_file:
             json.dump(logs, log_file, indent=4)
 
@@ -160,7 +162,7 @@ def main():
         torch.save(resnet.state_dict(), model_folder / 'model_last.pt')
 
     # End W&B run
-    wandb.finish()
+    # wandb.finish()
 
 if __name__ == '__main__':
     main()

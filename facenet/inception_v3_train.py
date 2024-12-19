@@ -33,10 +33,27 @@ class FaceDataset(Dataset):
         return image, label
 
 # Data transformations
+from torchvision import transforms
+
 data_transform = transforms.Compose([
-    transforms.Resize((299, 299)),  # Resize images
-    transforms.ToTensor(),          # Convert to PyTorch tensor
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize
+    transforms.Resize((299, 299)),
+
+    # --- Standard Augmentations ---
+    transforms.RandomApply([
+        transforms.RandomHorizontalFlip(),  # Flip horizontally
+        transforms.RandomRotation(degrees=15),  # Rotate by up to 15 degrees
+        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),  # Translate and scale
+    ], p=0.8),
+
+    # --- Augmentations to reduce image quality ---
+    transforms.RandomApply([
+        transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
+        transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.2),
+        transforms.RandomAdjustSharpness(sharpness_factor=0.5, p=0.5),
+    ], p=0.8),
+
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
 # Create dataset
@@ -64,7 +81,7 @@ model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
 
 load_best_model = True
 if load_best_model:
-    model.load_state_dict(torch.load(out_dir / 'best_face_recognition_model.pth', weights_only=True))
+    model.load_state_dict(torch.load(out_dir / 'best_face_recognition_model_with_augmentations.pth', weights_only=True))
 
 # --- Training ---
 
@@ -107,7 +124,7 @@ for epoch in range(num_epochs):
     # Save the model if it has the best validation loss so far
     if val_loss < best_val_loss:
         best_val_loss = val_loss
-        torch.save(model.state_dict(), out_dir / 'best_face_recognition_model.pth')
+        torch.save(model.state_dict(), out_dir / 'best_face_recognition_model_with_augmentations.pth')
         print("saving model...")
 
     # Training phase
