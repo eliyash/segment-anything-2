@@ -5,7 +5,7 @@ from pathlib import Path
 import cv2
 
 from florence_2.read_interaction_csv import NOT_NAMES
-from florence_2.show_results import get_all_annotation_paths, validate_data, COLORS_DICT
+from florence_2.show_results import get_all_annotation_paths, validate_data, COLORS_DICT, monkey_show_filtered
 
 
 def show_florence2_results(video_file_paths, annotation_root):
@@ -84,6 +84,35 @@ def show_florence2_results(video_file_paths, annotation_root):
     (dict_results_path / 'matching_frames_indexes.json').write_text(json.dumps(matching_frames_indexes, indent=4))
 
 
+def get_frame_with_gt_by_video():
+    annotation_root = Path(r'C:\Workspace\ChimpanzeesThesis\outputs\florence2_by_signals__26_9_24\home\ubuntu\segment-anything-2\florence_2\output')
+    video_root_path = Path('D:/per_signal_videos')
+    dict_results_path = Path(r'C:\Workspace\ChimpanzeesThesis\outputs\signal_frames_data')
+    matching_frames_indexes = json.loads((dict_results_path / 'matching_frames_indexes.json').read_text())
+    print(sorted(map(len, matching_frames_indexes.values())))
+    for video_name, frame_indexes in matching_frames_indexes.items():
+
+        frame_indexes = frame_indexes[:1]
+
+        video_path = video_root_path / video_name
+        video_capture = cv2.VideoCapture(video_path.as_posix())
+
+        for frame_index in frame_indexes:
+            video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+            ret, frame = video_capture.read()
+            if not ret:
+                continue
+
+            all_annotation_file_paths = get_all_annotation_paths(annotation_root, frame_index, video_path)
+
+            res_dicts = {n: json.loads(f.read_text()) for n, f in all_annotation_file_paths.items()}
+            list_of_data = validate_data(res_dicts)
+
+            frame_with_bboxs = monkey_show_filtered(frame, list_of_data)
+            cv2.imshow('frame', frame_with_bboxs[::2, ::2])
+            cv2.waitKey(0)
+
+
 def main():
     video_root_path = Path('D:/per_signal_videos')
     annotation_root = Path(r'C:\Workspace\ChimpanzeesThesis\outputs\florence2_by_signals__26_9_24\home\ubuntu\segment-anything-2\florence_2\output')
@@ -99,5 +128,6 @@ def count_issues_in_signal_videos_annotations():
 
 
 if __name__ == '__main__':
-    main()
-    count_issues_in_signal_videos_annotations()
+    get_frame_with_gt_by_video()
+    # main()
+    # count_issues_in_signal_videos_annotations()
