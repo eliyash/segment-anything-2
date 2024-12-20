@@ -1,8 +1,7 @@
 import boto3
 
-# Replace with your instance ID
-instance_id1 = 'i-06f7291958a9ee0a5'
-instance_id2 = 'i-0bfcc7ce54a6f2ac2'
+working_clearml_instance_id = 'i-0bfcc7ce54a6f2ac2'
+other_instance_id = 'i-06f7291958a9ee0a5'
 
 
 session = boto3.Session(profile_name='chimp')
@@ -15,7 +14,7 @@ def reboot_instance(instance_id):
     ec2.reboot_instances(InstanceIds=[instance_id])
 
 
-def get_ip(instance_id):
+def start_instance(instance_id):
     response = ec2.start_instances(InstanceIds=[instance_id])
 
     # Get the instance ID from the response
@@ -31,9 +30,12 @@ def get_ip(instance_id):
     public_ip = instance['PublicIpAddress']
 
     # Print the EC2 hostname
-    print(f'ssh -i "eliahu.pem" ubuntu@ec2-{public_ip.replace(".", "-")}.compute-1.amazonaws.com')
+    # copy str to clipboard
+    connection_command = f'ssh -i "eliahu.pem" ubuntu@ec2-{public_ip.replace(".", "-")}.compute-1.amazonaws.com'
+    print(connection_command)
+    import pyperclip
+    pyperclip.copy(connection_command)
 
 
-# start_instance(instance_id1)
-# reboot_instance(instance_id2)
-get_ip(instance_id2)
+# reboot_instance(working_clearml_instance_id)
+start_instance(working_clearml_instance_id)
