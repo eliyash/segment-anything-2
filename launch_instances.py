@@ -10,14 +10,10 @@ session = boto3.Session(profile_name='chimp')
 # Create an EC2 client using the session
 ec2 = session.client('ec2', region_name='us-east-1')
 
-# ec2.reboot_instances(InstanceIds=[instance_id2]); exit()
 
-def start_instance(instance_id):
-    try:
-        response = ec2.start_instances(InstanceIds=[instance_id])
-        print(f'Instance {instance_id} started successfully.')
-    except Exception as e:
-        print(f'Error starting instance: {e}')
+def reboot_instance(instance_id):
+    ec2.reboot_instances(InstanceIds=[instance_id])
+
 
 def get_ip(instance_id):
     response = ec2.start_instances(InstanceIds=[instance_id])
@@ -39,4 +35,5 @@ def get_ip(instance_id):
 
 
 # start_instance(instance_id1)
+# reboot_instance(instance_id2)
 get_ip(instance_id2)
