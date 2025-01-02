@@ -6,6 +6,7 @@ import cv2
 import torch
 import inference_on_full_videos_updated
 from facenet.inception_v3_inference import predict_classes
+from monkey_names_with_classes import ALL_CLASS_INDEX_TO_NAMES
 
 from models.common import DetectMultiBackend
 from utils.general import check_img_size
@@ -73,7 +74,7 @@ def run(
 
             for cls, (xs, xe), (ys, ye) in boxes:
                 cv2.rectangle(image, (ys, xs), (ye, xe), (0, 255, 0), 2)
-                cv2.putText(image, str(cls), (ys, xs + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.putText(image, ALL_CLASS_INDEX_TO_NAMES[cls], (ys, xs + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             # cv2.imshow('orig', image)
             # cv2.waitKey(0)
             cv2.imwrite(str(images_out_folder / img_path.name), image)
@@ -104,9 +105,9 @@ def parse_opt():
 if __name__ == "__main__":
     opt = parse_opt()
 
-    opt.weights = r"C:\Users\Eliahu\Downloads\best.pt"
+    opt.weights = r"C:\Users\Eliahu\Downloads\best_finetun_chimp_id_on_ccr.pt"
     # opt.output_path = r"D:\inference_frames_collection_using_ccr_train_with_orig_numbers"
     # opt.source = r"D:\frames_collection"
-    opt.output_path = r"D:\inference_chimpanzee_id_data"
+    opt.output_path = r"D:\inference/best_finetun_chimp_id_on_ccr_with_names"
     opt.source = r"C:\Workspace\ChimpanzeesThesis\Chimpanzee ID Data"
     run(**vars(opt))
