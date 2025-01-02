@@ -30,15 +30,15 @@ for dataset_name in ['face', 'body']:  # 'frame'
             video_folder = out_dir / str(video_year) / video_name
             video_folder.mkdir(parents=True, exist_ok=True)
 
-            # for name, bbox in bboxes.items():
-            #     bbox = np.array(bbox)
-            #     bbox[2:] += bbox[:2]
-            #     bbox[::2] *= x_size
-            #     bbox[1::2] *= y_size
-            #     bbox = bbox.astype(int)
-            #     cv2.rectangle(cv_image, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
-            # cv2.imshow('', cv_image)
-            # cv2.waitKey(1)
+            for name, bbox in bboxes.items():
+                bbox = np.array(bbox)
+                bbox[2:] += bbox[:2]
+                bbox[::2] *= x_size
+                bbox[1::2] *= y_size
+                bbox = bbox.astype(int)
+                cv2.rectangle(cv_image, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
+            cv2.imshow('', cv_image)
+            cv2.waitKey(1)
 
             index_str = f'{frame_index:08d}'
             cv2.imwrite((video_folder / f'{index_str}.jpg').as_posix(), cv_image)

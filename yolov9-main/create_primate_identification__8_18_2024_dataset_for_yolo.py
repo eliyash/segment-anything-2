@@ -1,68 +1,15 @@
 import json
-import shutil
-from pathlib import Path
 
 import cv2
 import parse
 
-JUST_HORIZONTAL_LOCATIONS = ['l', 'm', 'r']
-JUST_VERTICAL_LOCATIONS = ['t', 'm', 'b']
-
-import random
-import shutil
 from pathlib import Path
 
-def split_and_save_data(all_cases, dataset_folder_path):
-    """
-    Shuffles and splits data into train, validation, and test sets, then saves it to the specified folder.
+from create_yolov9_ccr_dataset__23_12_2024 import save_split_and_save_dataset_in_yolo_format, get_yolov9_image_label, \
+    ALL_NAMES_TO_CLASS_INDEX
 
-    Args:
-        all_cases: A list of tuples, where each tuple is (label_data, image_file_path).
-        dataset_folder_path: The path to the folder where the data should be saved.
-    """
-
-    dataset_folder_path = Path(dataset_folder_path)
-
-    # Create necessary directories
-    (dataset_folder_path / "images" / "train").mkdir(parents=True, exist_ok=True)
-    (dataset_folder_path / "images" / "val").mkdir(parents=True, exist_ok=True)
-    (dataset_folder_path / "images" / "test").mkdir(parents=True, exist_ok=True)
-    (dataset_folder_path / "labels" / "train").mkdir(parents=True, exist_ok=True)
-    (dataset_folder_path / "labels" / "val").mkdir(parents=True, exist_ok=True)
-    (dataset_folder_path / "labels" / "test").mkdir(parents=True, exist_ok=True)
-
-    # Shuffle the data
-    random.shuffle(all_cases)
-
-    # Split the data
-    train_split = int(0.8 * len(all_cases))
-    val_split = int(0.95 * len(all_cases))
-    train_cases = all_cases[:train_split]
-    val_cases = all_cases[train_split:val_split]
-    test_cases = all_cases[val_split:]
-
-    # Process each dataset type
-    for dataset_type, cases in zip(["train", "val", "test"], [train_cases, val_cases, test_cases]):
-        # Open the file to write image paths
-        with open(dataset_folder_path / f"{dataset_type}.txt", "w") as image_list_file:
-            for label_data, image_file_path in cases:
-                image_file_path = Path(image_file_path)
-                image_name = image_file_path.name
-                image_stem = image_file_path.stem
-
-                # Copy the image
-                destination_image_path = dataset_folder_path / "images" / dataset_type / image_name
-                shutil.copy(image_file_path, destination_image_path)
-
-                # Write the label data
-                label_file_path = dataset_folder_path / "labels" / dataset_type / f"{image_stem}.txt"
-                with open(label_file_path, "w") as label_file:
-                    for inner_list in label_data:
-                        label_file.write(" ".join(map(str, inner_list)) + "\n")
-
-                # Write the relative image path
-                relative_image_path = f"./images/{dataset_type}/{image_name}"
-                image_list_file.write(relative_image_path + "\n")
+JUST_HORIZONTAL_LOCATIONS = ['l', 'm', 'r']
+JUST_VERTICAL_LOCATIONS = ['t', 'm', 'b']
 
 
 def get_sorted_names_by_location(names_by_locations, is_horizontal):
@@ -89,9 +36,8 @@ def main():
     images_dict = {}
     for image_path in project_folder.glob('**/*.jpg'):
         images_dict[image_path.name] = image_path
-    # Open the NDJSON file and read line by line
 
-    all_cases = []
+    all_images_data = {}
     duplicates_cases = []
     complicated_relations_cases = []
     with open(project_folder / 'Export v2 project - primate identification - 8_18_2024.ndjson', 'r') as file:
@@ -113,7 +59,6 @@ def main():
             for i, relationship in enumerate(relationships):
                 relationship_map = relationship['unidirectional_relationship']
                 boxes_by_animal[i] = all_annotations_raw[relationship_map['source']], all_annotations_raw[relationship_map['target']]
-            # print(boxes_by_animal)
 
             file_name_lower = file_name.lower()
             names_in_image = list(filter(lambda n: n in file_name_lower, all_names_lower))
@@ -143,22 +88,24 @@ def main():
             image_file_path = images_dict[file_name]
             img_shape = cv2.imread(image_file_path.as_posix()).shape
             label_data = get_image_label(bboxs_by_names, img_shape)
-            all_cases.append((label_data, image_file_path))
+            yolo_annotation = get_yolov9_image_label(label_data)
+            all_images_data[image_file_path.relative_to(project_folder)] = yolo_annotation
 
-    save_folder = Path(r'C:\Users\Eliahu\Downloads\coco_datasets\chimps')
+    save_folder = Path(r'C:\Users\Eliahu\Downloads\coco_datasets\chimps_new')
     save_folder.mkdir(exist_ok=True, parents=True)
-    split_and_save_data(all_cases, save_folder)
+    save_split_and_save_dataset_in_yolo_format(root_folder, project_folder, all_images_data)
+    # split_and_save_data(all_cases, save_folder)
 
 
 def get_image_label(boxes_by_animal, img_shape):
     imh, imw, _ = img_shape
-    list_of_bboxes = []
+    scaled_bbox = {}
     for individual_name, data in boxes_by_animal.items():
+        assert individual_name in ALL_NAMES_TO_CLASS_INDEX
         face_bbox = [box for part_name, box in data if part_name == 'face'][0]
         x, y, w, h = map(int, [face_bbox['left'], face_bbox['top'], face_bbox['width'], face_bbox['height']])
-        class_ind = 0  # use individual name for class
-        list_of_bboxes.append((class_ind, (x + w / 2) / imw, (y + h / 2) / imh, w / imw, h / imh))
-    return list_of_bboxes
+        scaled_bbox[individual_name] = x / imw, y / imh, w / imw, h / imh
+    return scaled_bbox
 
 
 def show_image(boxes_by_animal, image_file_path):

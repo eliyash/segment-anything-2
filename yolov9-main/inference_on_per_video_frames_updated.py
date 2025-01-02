@@ -4,7 +4,7 @@ from pathlib import Path
 
 import cv2
 import torch
-import inference_on_full_videos
+import inference_on_full_videos_updated
 from facenet.inception_v3_inference import predict_classes
 
 from models.common import DetectMultiBackend
@@ -42,35 +42,38 @@ def run(
     # Use OpenCV to load images
 
     res = {}
-    for img_path in Path(source).glob('*'):
+    for img_path in Path(source).glob('*/*'):
         print(time.strftime('%Y-%m-%d %H:%M:%S'), img_path)
         if img_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']:
             im0s = cv2.imread(str(img_path))
             assert im0s is not None, f"Image Not Found {img_path}"
             # Resize and pad image
 
-            im, pred = inference_on_full_videos.inference_image(
+            im, pred = inference_on_full_videos_updated.inference_image(
                 im0s, model, imgsz, conf_thres, iou_thres, max_det, device, classes, agnostic_nms, augment
             )
 
-            boxes = inference_on_full_videos.add_pred_to_image(im0s, im, pred)
+            boxes = inference_on_full_videos_updated.add_pred_to_image(im0s, im, pred)
             if len(boxes) > 0:
                 res[img_path] = boxes
 
             # if len(res) > 10:
             #     break
 
-    images_out_folder = Path(r"D:\frames_collection_classified_with_augment")
+    images_out_folder = output_path
     images_out_folder.mkdir(exist_ok=True, parents=True)
+    use_insecption_classifier = False
     for img_path, boxes in res.items():
         if len(boxes) > 0:
             image = cv2.imread(str(img_path))
-            faces = [image[xs: xe, ys: ye].copy() for (xs, xe), (ys, ye) in boxes]
-            predicted_class_names = predict_classes(faces)
+            if use_insecption_classifier:
+                faces = [image[xs: xe, ys: ye].copy() for _, (xs, xe), (ys, ye) in boxes]
+                predicted_class_names = predict_classes(faces)
+                boxes = [(cls, *bbox_data) for cls, bbox_data in zip(predicted_class_names, boxes)]
 
-            for ((xs, xe), (ys, ye)), name in zip(boxes, predicted_class_names):
+            for cls, (xs, xe), (ys, ye) in boxes:
                 cv2.rectangle(image, (ys, xs), (ye, xe), (0, 255, 0), 2)
-                cv2.putText(image, name, (ys, xs + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.putText(image, str(cls), (ys, xs + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             # cv2.imshow('orig', image)
             # cv2.waitKey(0)
             cv2.imwrite(str(images_out_folder / img_path.name), image)
@@ -101,7 +104,9 @@ def parse_opt():
 if __name__ == "__main__":
     opt = parse_opt()
 
-    opt.weights = r"C:\Users\Eliahu\Downloads\coco_datasets\chimps\end_of_train\weights\best.pt"
-    opt.output_path = r"C:\Workspace\ChimpanzeesThesis\segment-anything-2\yolov9-main\runs\mytest_frames_collection_end_of_train_refactor"
-    opt.source = r"D:\frames_collection"
+    opt.weights = r"C:\Users\Eliahu\Downloads\best.pt"
+    # opt.output_path = r"D:\inference_frames_collection_using_ccr_train_with_orig_numbers"
+    # opt.source = r"D:\frames_collection"
+    opt.output_path = r"D:\inference_chimpanzee_id_data"
+    opt.source = r"C:\Workspace\ChimpanzeesThesis\Chimpanzee ID Data"
     run(**vars(opt))

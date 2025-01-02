@@ -52,7 +52,7 @@ def add_pred_to_image(im0s, im, pred):
             for *xyxy, conf, cls in reversed(det):
                 xyxy = list(map(int, xyxy))
 
-                box = (xyxy[1], xyxy[3]), (xyxy[0], xyxy[2])
+                box = int(cls), (xyxy[1], xyxy[3]), (xyxy[0], xyxy[2])
                 boxes.append(box)
                 # face = im0s[xyxy[1]: xyxy[3], xyxy[0]: xyxy[2]].copy()
 

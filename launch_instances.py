@@ -31,7 +31,7 @@ def start_instance(instance_id):
 
     # Print the EC2 hostname
     # copy str to clipboard
-    connection_command = f'ssh -i "eliahu.pem" ubuntu@ec2-{public_ip.replace(".", "-")}.compute-1.amazonaws.com'
+    connection_command = f'ssh -i "eliahu.pem" -o StrictHostKeyChecking=no ubuntu@ec2-{public_ip.replace(".", "-")}.compute-1.amazonaws.com'
     print(connection_command)
     import pyperclip
     pyperclip.copy(connection_command)
