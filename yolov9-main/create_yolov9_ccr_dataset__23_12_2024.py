@@ -31,10 +31,10 @@ def main():
                     except ValueError:
                         print(f"No bounding boxes found in {image_path}")
 
-    save_split_and_save_dataset_in_yolo_format(root_folder, original_images_folder, all_frames_data)
+    save_split_and_save_dataset_in_yolo_format(root_folder / 'refactor', original_images_folder, all_frames_data)
 
 
-def save_split_and_save_dataset_in_yolo_format(root_folder, original_images_folder, all_frames_data):
+def save_split_and_save_dataset_in_yolo_format(new_dataset_folder, original_images_folder, all_frames_data, max_height=None):
     all_image_files = np.array(list(all_frames_data.keys()))
     np.random.seed(42)
     np.random.shuffle(all_image_files)
@@ -45,7 +45,6 @@ def save_split_and_save_dataset_in_yolo_format(root_folder, original_images_fold
     val_cases = all_image_files[train_split:val_split]
     test_cases = all_image_files[val_split:]
 
-    new_dataset_folder = root_folder / 'refactor'
     new_dataset_images_folder = new_dataset_folder / 'images'
     new_dataset_labels_folder = new_dataset_folder / 'labels'
     for dataset_type, cases in zip(["train", "val", "test"], [train_cases, val_cases, test_cases]):
@@ -59,9 +58,17 @@ def save_split_and_save_dataset_in_yolo_format(root_folder, original_images_fold
 
             image_path = new_dataset_images_folder / dataset_type / new_image_file_name
             if not image_path.exists():
-                new_image_paths.append(image_path.relative_to(new_dataset_folder))
                 image_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(str(original_images_folder / relative_orig_image_path), str(image_path))
+                if max_height is not None:
+                    image = cv2.imread(str(original_images_folder / relative_orig_image_path))
+                    image_h, image_w, _ = image.shape
+                    if image_h > max_height:
+                        width_scale = image_w / image_h
+                        image = cv2.resize(image, (int(max_height * width_scale), max_height))
+                    cv2.imwrite(str(image_path), image)
+                else:
+                    shutil.copy(str(original_images_folder / relative_orig_image_path), str(image_path))
+                new_image_paths.append(image_path.relative_to(new_dataset_folder))
 
         posix_relative_paths = [f'./{path.as_posix()}' for path in new_image_paths]
         (new_dataset_folder / f"{dataset_type}.txt").write_text("\n".join(posix_relative_paths) + "\n")

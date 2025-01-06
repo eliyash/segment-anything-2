@@ -43,7 +43,7 @@ def run(
     # Use OpenCV to load images
 
     res = {}
-    for img_path in Path(source).glob('*/*'):
+    for img_path in Path(source).glob('**/*'):
         print(time.strftime('%Y-%m-%d %H:%M:%S'), img_path)
         if img_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']:
             im0s = cv2.imread(str(img_path))

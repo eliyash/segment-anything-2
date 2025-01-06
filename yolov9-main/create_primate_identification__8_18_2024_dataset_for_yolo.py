@@ -93,7 +93,7 @@ def main():
 
     save_folder = Path(r'C:\Users\Eliahu\Downloads\coco_datasets\chimps_new')
     save_folder.mkdir(exist_ok=True, parents=True)
-    save_split_and_save_dataset_in_yolo_format(root_folder, project_folder, all_images_data)
+    save_split_and_save_dataset_in_yolo_format(root_folder / 'refactor', project_folder, all_images_data)
     # split_and_save_data(all_cases, save_folder)
 
 
