@@ -9,5 +9,5 @@ _C.*
 outputs/*
 checkpoints/*.pt
 /.idea/
-/yolov9-main/runs/*
-/yolov9-main/weights/*
+/yolov9_main/runs/*
+/yolov9_main/weights/*

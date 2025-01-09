@@ -1,2 +1,0 @@
-testinstall1
-python==3.6.9
