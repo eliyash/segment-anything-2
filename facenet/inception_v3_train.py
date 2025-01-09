@@ -45,6 +45,7 @@ class ChimpFaceDataset(Dataset):
 
 def main(config, load_best_model=False):
     batch_size = config.batch_size
+    num_epochs = config.num_epochs
     data_path = Path(config.data_path)
     output_dir = Path(config.output_path)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -106,7 +107,6 @@ def main(config, load_best_model=False):
     best_val_loss = float('inf')
 
     # Training loop
-    num_epochs = 1000  # Adjust as needed
     for epoch in range(num_epochs):
         # Validation phase
         model.eval()   # Set model to evaluation mode
@@ -169,6 +169,7 @@ def parse_opt():
     parser.add_argument('--output_path', type=str)
     parser.add_argument('--data_path', type=str)
     parser.add_argument('--batch_size', type=int, default=32, help='batch size')
+    parser.add_argument('--num_epochs', type=int, default=1000, help='number of epochs')
     return parser.parse_args()
 
 
