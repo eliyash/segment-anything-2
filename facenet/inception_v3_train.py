@@ -10,8 +10,17 @@ from torchvision import transforms
 
 from PIL import Image
 
-from yolov9_main.monkey_names_with_classes import ALL_NAMES_TO_CLASS_INDEX
+# from yolov9_main.monkey_names_with_classes import ALL_NAMES_TO_CLASS_INDEX
+IGNORE_NAME = 'negative'
 
+CHIMP_ID_NAMES = [
+    'ben', 'glenn', 'gracie', 'jake', 'jean', 'jerrard', 'johari', 'julie', 'kima', 'nan', 'oliver', 'pandora',
+    'regina', 'shaun', 'uki', 'yoshi', 'zoe', 'zuri'
+]
+CRR_NAMES = ['tua', 'peley', 'pama', 'velu', 'jeje', 'jire', 'fana', 'flanle', 'foaf', 'fanwa', 'fanle', 'joya', 'yo']
+CHIMP_ID_NAME_TO_CLASS_INDEX = {name: i for i, name in enumerate(CHIMP_ID_NAMES)}
+CRR_NAME_TO_CLASS_INDEX = {name: i+25 for i, name in enumerate(CRR_NAMES)}
+ALL_NAMES_TO_CLASS_INDEX = {**CHIMP_ID_NAME_TO_CLASS_INDEX, **CRR_NAME_TO_CLASS_INDEX, 'OPEN_APE': 18}
 
 # Dataset definition
 class ChimpFaceDataset(Dataset):
