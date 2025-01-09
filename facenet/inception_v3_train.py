@@ -1,3 +1,5 @@
+import argparse
+
 import torch
 import torchvision.models as models
 from torch.utils.data import DataLoader, Dataset
@@ -41,11 +43,11 @@ class ChimpFaceDataset(Dataset):
         return image, label
 
 
-def main(load_best_model=True):
-    batch_size = 32
-    root_data_dir = Path(r'D:\faces_dataset')
-    out_dir = Path(r'D:\training_output\inception_v3_train')
-    out_dir.mkdir(parents=True, exist_ok=True)
+def main(config, load_best_model=False):
+    batch_size = config.batch_size
+    data_path = Path(config.data_path)
+    output_dir = Path(config.output_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     train_transform = transforms.Compose([
         transforms.Resize((299, 299)),
@@ -74,8 +76,8 @@ def main(load_best_model=True):
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-    train_dataset = ChimpFaceDataset(root_dir=root_data_dir / 'train', transform=train_transform)
-    val_dataset = ChimpFaceDataset(root_dir=root_data_dir / 'val', transform=val_transform)
+    train_dataset = ChimpFaceDataset(root_dir=data_path / 'train', transform=train_transform)
+    val_dataset = ChimpFaceDataset(root_dir=data_path / 'val', transform=val_transform)
 
     # Create dataloaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
@@ -90,8 +92,8 @@ def main(load_best_model=True):
     num_classes = max(ALL_NAMES_TO_CLASS_INDEX) + 1  # Number of people
     model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
 
-    if load_best_model and (out_dir / 'best_model.pth').exists():
-        model.load_state_dict(torch.load(out_dir / 'best_model.pth', weights_only=True))
+    if load_best_model and (output_dir / 'best_model.pth').exists():
+        model.load_state_dict(torch.load(output_dir / 'best_model.pth', weights_only=True))
 
     # --- Training ---
 
@@ -134,7 +136,7 @@ def main(load_best_model=True):
         # Save the model if it has the best validation loss so far
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), out_dir / 'best_model.pth')
+            torch.save(model.state_dict(), output_dir / 'best_model.pth')
             print("saving model...")
 
         # Training phase
@@ -162,5 +164,13 @@ def main(load_best_model=True):
     print("Training complete. Best model saved as 'best_face_recognition_model.pth'")
 
 
+def parse_opt():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output_path', type=str)
+    parser.add_argument('--data_path', type=str)
+    parser.add_argument('--batch_size', type=int, default=32, help='batch size')
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
-    main()
+    main(parse_opt())
