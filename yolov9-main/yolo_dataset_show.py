@@ -1,17 +1,10 @@
 from pathlib import Path
 import cv2
+from monkey_names_with_classes import ALL_CLASS_INDEX_TO_NAMES
 
 
 class YoloDataset:
     def __init__(self, dataset_root_folder, dataset_type='train'):
-        """
-        Initializes the YoloDataset object.
-
-        Args:
-          dataset_root_folder: Path to the parent directory containing "images" and "labels" folders.
-          dataset_type: Type of the dataset (e.g., 'train', 'val', 'test').
-                        Images are assumed to be under images_folder/dataset_type/images.
-        """
         self.dataset_root_folder = Path(dataset_root_folder)
         self.dataset_type = dataset_type
         self.image_dir = self.dataset_root_folder / "images" / dataset_type
@@ -19,21 +12,9 @@ class YoloDataset:
         self.image_files = sorted([f.name for f in self.image_dir.glob("*")])
 
     def __len__(self):
-        """
-        Returns the total number of images in the dataset.
-        """
         return len(self.image_files)
 
     def __getitem__(self, index):
-        """
-        Loads and returns the image and its bounding boxes at the given index.
-
-        Args:
-          index: Index of the image to load.
-
-        Returns:
-          A tuple containing the image and a list of bounding boxes.
-        """
         image_path = self.image_dir / self.image_files[index]
         label_path = self.label_dir / f'{Path(self.image_files[index]).stem}.txt'
 
@@ -52,13 +33,25 @@ class YoloDataset:
 
         return image, bboxes
 
-    def show_image(self, index):
-        """
-        Displays the image with bounding boxes drawn on it.
+    def get_faces(self, index, margine=0.2):
+        image, bboxes = self[index]
 
-        Args:
-          index: Index of the image to display.
-        """
+        faces = {}
+        for bbox in bboxes:
+            class_id, x_min, y_min, x_max, y_max = map(int, bbox)
+            # increase hight and width by margine
+            x_min = max(0, x_min - int((x_max - x_min) * margine))
+            y_min = max(0, y_min - int((y_max - y_min) * margine))
+            x_max = min(image.shape[1], x_max + int((x_max - x_min) * margine))
+            y_max = min(image.shape[0], y_max + int((y_max - y_min) * margine))
+
+            face = image[y_min:y_max, x_min:x_max]
+            real_name = ALL_CLASS_INDEX_TO_NAMES[class_id]
+            faces[real_name] = face
+
+        return faces
+
+    def show_image(self, index):
         image, bboxes = self[index]
 
         for bbox in bboxes:
@@ -71,12 +64,39 @@ class YoloDataset:
         cv2.destroyAllWindows()
 
 
-dataset_root_folder = r'D:\count_crop_and_recognise_dataset\refactor'
-# dataset_root_folder = r'C:\Users\Eliahu\Downloads\coco_datasets\chimps'
-dataset = YoloDataset(dataset_root_folder, dataset_type='test')
-size_of_dataset = len(dataset)
-for i in range(0, size_of_dataset, size_of_dataset//20):
-    try:
-        dataset.show_image(index=i)
-    except Exception as e:
-        print(f"Error displaying image at index {i}: {e}")
+def show_faces():
+    dataset_root_folder = r'D:\count_crop_and_recognise_dataset\refactor'
+    # dataset_root_folder = r'C:\Users\Eliahu\Downloads\coco_datasets\chimps'
+    dataset = YoloDataset(dataset_root_folder, dataset_type='test')
+    size_of_dataset = len(dataset)
+    for i in range(0, size_of_dataset, size_of_dataset//20):
+        try:
+            dataset.show_image(index=i)
+        except Exception as e:
+            print(f"Error displaying image at index {i}: {e}")
+
+
+def save_face_dataset():
+    root = Path(r'D:/')
+    output_folder = root / 'faces_dataset'
+    dataset_name_to_folder = {
+        'chimpid': (Path(r'C:\Workspace\ChimpanzeesThesis\chimpanzee_id_data_yolo_fmt'), 1),
+        'ccr': (root / 'count_crop_and_recognise_dataset' / 'refactor', 15),
+    }
+    for dataset_name, (dataset_folder, interval) in dataset_name_to_folder.items():
+        for dataset_type in ['train', 'val', 'test']:
+            dataset = YoloDataset(dataset_folder, dataset_type=dataset_type)
+            size_of_dataset = len(dataset)
+
+            for image_index in range(0, size_of_dataset, interval):
+                faces_dict = dataset.get_faces(index=image_index)
+                for real_name, face in faces_dict.items():
+                    file_path = output_folder / dataset_type / f'{dataset_name}_{real_name}' / dataset.image_files[image_index]
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                    if not file_path.exists():
+                        cv2.imwrite(str(file_path), face)
+
+
+if __name__ == "__main__":
+    show_faces()
+    # save_face_dataset()
