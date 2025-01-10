@@ -14,7 +14,8 @@ def parse_opt():
 
 
 if __name__ == '__main__':
-    task = Task.init(auto_connect_arg_parser=False)
+    task = Task.init(auto_connect_arg_parser=True)
 
-    task.connect(parse_opt())
+    print(parse_opt())
+    task.connect(parse_opt().__dict__)
 
