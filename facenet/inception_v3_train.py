@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import torch
 import torchvision.models as models
@@ -183,4 +184,8 @@ def parse_opt():
 
 
 if __name__ == '__main__':
+    # check is its linux or windows
+    if os.name == 'posix':
+        from clearml import Task
+        Task.init(auto_connect_arg_parser=True)
     main(parse_opt())
