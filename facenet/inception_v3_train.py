@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 
 import torch
 import torchvision.models as models
@@ -62,12 +63,15 @@ class ChimpFaceDataset(Dataset):
 def main(config):
     batch_size = config.batch_size
     num_epochs = config.num_epochs
+    base_model = config.base_model
     data_path = Path(config.data_path)
-    output_dir = Path(config.output_path)
-    load_best_model = config.load_best_model
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = Path(config.output_path)
 
-    model_file_path = output_dir / MODEL_NAME
+    training_folder = output_path / f'{time.strftime("%Y%m%d-%H%M%S")}'
+    training_folder.mkdir(parents=True, exist_ok=True)
+    print(f'training_folder: {training_folder}')
+
+    model_file_path = training_folder / MODEL_NAME
 
     train_transform = transforms.Compose([
         transforms.Resize((299, 299)),
@@ -112,8 +116,9 @@ def main(config):
     num_classes = max(ALL_CLASS_INDEX_TO_NAMES) + 1  # Number of people
     model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
 
-    if load_best_model and model_file_path.exists():
-        model.load_state_dict(torch.load(model_file_path, weights_only=True))
+    if base_model:
+        base_model_file_path = output_path / base_model / MODEL_NAME
+        model.load_state_dict(torch.load(base_model_file_path, weights_only=True))
 
     # --- Training ---
 
@@ -188,7 +193,7 @@ def parse_opt():
     parser.add_argument('--data_path', type=str)
     parser.add_argument('--batch_size', type=int, default=32, help='batch size')
     parser.add_argument('--num_epochs', type=int, default=1000, help='number of epochs')
-    parser.add_argument('--load_best_model', action='store_true', help='load the best model from previous training')
+    parser.add_argument('--base_model', type=str, default='')
     return parser.parse_args()
 
 
