@@ -1,6 +1,7 @@
 import argparse
 
 from pathlib import Path
+from clearml import Task
 
 
 def parse_opt():
@@ -13,4 +14,6 @@ def parse_opt():
 
 
 if __name__ == '__main__':
+    task = Task.init(auto_connect_arg_parser=False)
     print(parse_opt().__dict__)
+
