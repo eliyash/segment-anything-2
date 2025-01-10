@@ -22,6 +22,7 @@ CRR_NAMES = ['tua', 'peley', 'pama', 'velu', 'jeje', 'jire', 'fana', 'flanle', '
 CHIMP_ID_NAME_TO_CLASS_INDEX = {name: i for i, name in enumerate(CHIMP_ID_NAMES)}
 CRR_NAME_TO_CLASS_INDEX = {name: i+25 for i, name in enumerate(CRR_NAMES)}
 ALL_NAMES_TO_CLASS_INDEX = {**CHIMP_ID_NAME_TO_CLASS_INDEX, **CRR_NAME_TO_CLASS_INDEX, 'OPEN_APE': 18}
+ALL_CLASS_INDEX_TO_NAMES = {v: k for k, v in ALL_NAMES_TO_CLASS_INDEX.items()}
 
 # Dataset definition
 class ChimpFaceDataset(Dataset):
@@ -100,7 +101,7 @@ def main(config, load_best_model=False):
     model = models.inception_v3(weights=Inception_V3_Weights.IMAGENET1K_V1)
 
     # Modify the final classification layer
-    num_classes = max(ALL_NAMES_TO_CLASS_INDEX) + 1  # Number of people
+    num_classes = max(ALL_CLASS_INDEX_TO_NAMES) + 1  # Number of people
     model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
 
     if load_best_model and (output_dir / 'best_model.pth').exists():
