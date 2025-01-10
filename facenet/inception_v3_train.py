@@ -10,6 +10,7 @@ from torchvision.models import Inception_V3_Weights
 from torchvision import transforms
 
 from PIL import Image
+from tqdm import tqdm
 
 # from yolov9_main.monkey_names_with_classes import ALL_NAMES_TO_CLASS_INDEX
 IGNORE_NAME = 'negative'
@@ -23,6 +24,10 @@ CHIMP_ID_NAME_TO_CLASS_INDEX = {name: i for i, name in enumerate(CHIMP_ID_NAMES)
 CRR_NAME_TO_CLASS_INDEX = {name: i+25 for i, name in enumerate(CRR_NAMES)}
 ALL_NAMES_TO_CLASS_INDEX = {**CHIMP_ID_NAME_TO_CLASS_INDEX, **CRR_NAME_TO_CLASS_INDEX, 'OPEN_APE': 18}
 ALL_CLASS_INDEX_TO_NAMES = {v: k for k, v in ALL_NAMES_TO_CLASS_INDEX.items()}
+
+
+MODEL_NAME = 'best_model.pth'
+
 
 # Dataset definition
 class ChimpFaceDataset(Dataset):
@@ -54,12 +59,15 @@ class ChimpFaceDataset(Dataset):
         return image, label
 
 
-def main(config, load_best_model=False):
+def main(config):
     batch_size = config.batch_size
     num_epochs = config.num_epochs
     data_path = Path(config.data_path)
     output_dir = Path(config.output_path)
+    load_best_model = config.load_best_model
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    model_file_path = output_dir / MODEL_NAME
 
     train_transform = transforms.Compose([
         transforms.Resize((299, 299)),
@@ -104,8 +112,8 @@ def main(config, load_best_model=False):
     num_classes = max(ALL_CLASS_INDEX_TO_NAMES) + 1  # Number of people
     model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
 
-    if load_best_model and (output_dir / 'best_model.pth').exists():
-        model.load_state_dict(torch.load(output_dir / 'best_model.pth', weights_only=True))
+    if load_best_model and model_file_path.exists():
+        model.load_state_dict(torch.load(model_file_path, weights_only=True))
 
     # --- Training ---
 
@@ -119,6 +127,7 @@ def main(config, load_best_model=False):
 
     # Training loop
     for epoch in range(num_epochs):
+        print(f'Starting epoch {epoch}')
         # Validation phase
         model.eval()   # Set model to evaluation mode
         optimizer.eval()
@@ -126,7 +135,7 @@ def main(config, load_best_model=False):
         correct_classifications = 0
         total_samples = 0
         with torch.no_grad():
-            for images, labels in val_loader:
+            for images, labels in tqdm(val_loader, total=len(val_loader)):
                 outputs = model(images)
                 # outputs = outputs.logits
                 loss = criterion(outputs, labels)
@@ -147,14 +156,14 @@ def main(config, load_best_model=False):
         # Save the model if it has the best validation loss so far
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), output_dir / 'best_model.pth')
+            torch.save(model.state_dict(), model_file_path)
             print("saving model...")
 
         # Training phase
         model.train()  # Set model to training mode
         optimizer.train()
         # i = 0
-        for images, labels in train_loader:
+        for images, labels in tqdm(train_loader, total=len(train_loader)):
             # i += 1
             # if i < 18 * 4 + 1:
             #     continue
@@ -170,9 +179,7 @@ def main(config, load_best_model=False):
             loss.backward()
             optimizer.step()
 
-            print(f'.', end='')
-
-    print("Training complete. Best model saved as 'best_face_recognition_model.pth'")
+    print('Training complete.')
 
 
 def parse_opt():
@@ -181,6 +188,7 @@ def parse_opt():
     parser.add_argument('--data_path', type=str)
     parser.add_argument('--batch_size', type=int, default=32, help='batch size')
     parser.add_argument('--num_epochs', type=int, default=1000, help='number of epochs')
+    parser.add_argument('--load_best_model', action='store_true', help='load the best model from previous training')
     return parser.parse_args()
 
 
