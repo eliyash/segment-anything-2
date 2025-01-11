@@ -112,8 +112,7 @@ def main(config):
     # Load a pre-trained model (InceptionResnetV1)
     model = models.inception_v3(weights=Inception_V3_Weights.IMAGENET1K_V1)
 
-    # Modify the final classification layer
-    num_classes = max(ALL_CLASS_INDEX_TO_NAMES) + 1  # Number of people
+    num_classes = max(ALL_CLASS_INDEX_TO_NAMES) + 1
     model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
 
     if base_model:
