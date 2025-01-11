@@ -105,9 +105,10 @@ def parse_opt():
 if __name__ == "__main__":
     opt = parse_opt()
 
-    opt.weights = r"C:\Users\Eliahu\Downloads\best_finetun_chimp_id_on_ccr.pt"
-    # opt.output_path = r"D:\inference_frames_collection_using_ccr_train_with_orig_numbers"
-    # opt.source = r"D:\frames_collection"
-    opt.output_path = r"D:\inference/best_finetun_chimp_id_on_ccr_with_names"
-    opt.source = r"C:\Workspace\ChimpanzeesThesis\Chimpanzee ID Data"
+    # opt.weights = r"C:\Users\Eliahu\Downloads\best_finetun_chimp_id_on_ccr.pt"
+    opt.weights = r"C:\Users\Eliahu\Downloads\best_63fc5af994d541f280fa66a176e6eeec.pt"
+    # opt.output_path = r"D:\inference/best_finetun_chimp_id_on_ccr_with_names"
+    # opt.source = r"C:\Workspace\ChimpanzeesThesis\Chimpanzee ID Data"
+    opt.output_path = r"D:\inference/open_pose_only_on_frames_collection"
+    opt.source = r"D:\frames_collection"
     run(**vars(opt))
