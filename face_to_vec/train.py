@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 import cv2
 import numpy as np
@@ -12,6 +13,9 @@ from torchvision import models, transforms
 import random
 from sklearn.model_selection import train_test_split
 import argparse
+
+from torchvision.models import ResNet50_Weights
+from tqdm import tqdm
 
 
 class ChimpFacesDataset(Dataset):
@@ -42,31 +46,52 @@ class ChimpFacesDataset(Dataset):
 class TripletDataset(Dataset):
     """
     Dataset for generating triplets for Triplet Margin Loss.
+    Classes with only one sample are excluded from being anchors and positives.
+    They can still be used as negatives.
     """
+
     def __init__(self, file_paths: List[Path], labels: List[int], transform=None):
         self.file_paths = file_paths
         self.labels = labels
         self.transform = transform
+
         # Create a dictionary to map labels to indices
         self.label_to_indices = defaultdict(list)
         for idx, label in enumerate(labels):
             self.label_to_indices[label].append(idx)
-        self.labels_set = list(set(labels))
+
+        # Identify classes with at least two samples
+        self.valid_labels = [label for label, indices in self.label_to_indices.items() if len(indices) > 1]
+        if not self.valid_labels:
+            raise ValueError("No classes with at least two samples available for triplet generation.")
+
+        # Create a list of valid indices (only from classes with >=2 samples)
+        self.valid_indices = [idx for idx, label in enumerate(labels) if label in self.valid_labels]
+
+        # Precompute the list of all labels (including single-sample classes) for negatives
+        self.all_labels = list(set(labels))
+
+        # If needed, remove labels with only one sample from being selected as positives
+        # This is already handled by valid_labels and valid_indices
 
     def __getitem__(self, index):
-        anchor_path = self.file_paths[index]
-        anchor_label = self.labels[index]
+        anchor_idx = self.valid_indices[index]
+        anchor_path = self.file_paths[anchor_idx]
+        anchor_label = self.labels[anchor_idx]
+
         # Positive sample
-        positive_index = index
-        while positive_index == index:
-            positive_index = random.choice(self.label_to_indices[anchor_label])
-        positive_path = self.file_paths[positive_index]
+        positive_indices = self.label_to_indices[anchor_label]
+        positive_idx = anchor_idx
+        while positive_idx == anchor_idx:
+            positive_idx = random.choice(positive_indices)
+        positive_path = self.file_paths[positive_idx]
+
         # Negative sample
-        negative_label = random.choice(self.labels_set)
+        negative_label = random.choice(self.all_labels)
         while negative_label == anchor_label:
-            negative_label = random.choice(self.labels_set)
-        negative_index = random.choice(self.label_to_indices[negative_label])
-        negative_path = self.file_paths[negative_index]
+            negative_label = random.choice(self.all_labels)
+        negative_idx = random.choice(self.label_to_indices[negative_label])
+        negative_path = self.file_paths[negative_idx]
 
         # Load images
         anchor_image = cv2.imread(str(anchor_path))
@@ -92,7 +117,7 @@ class TripletDataset(Dataset):
         return anchor_image, positive_image, negative_image
 
     def __len__(self):
-        return len(self.file_paths)
+        return len(self.valid_indices)
 
 
 def prepare_triplet_data(config) -> Tuple[DataLoader, DataLoader, int]:
@@ -197,7 +222,7 @@ class EmbeddingNet(nn.Module):
     """
     def __init__(self, embedding_dim: int):
         super(EmbeddingNet, self).__init__()
-        self.backbone = models.resnet50(pretrained=True)
+        self.backbone = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
         # Replace the final layer
         num_ftrs = self.backbone.fc.in_features
         self.backbone.fc = nn.Linear(num_ftrs, embedding_dim)
@@ -217,9 +242,10 @@ def train_epoch_triplet(
     """
     Trains the model for one epoch using triplet loss.
     """
+    print("Training...")
     model.train()
     running_loss = 0.0
-    for batch_idx, (anchor, positive, negative) in enumerate(dataloader):
+    for batch_idx, (anchor, positive, negative) in tqdm(enumerate(dataloader), total=len(dataloader)):
         anchor = anchor.to(device)
         positive = positive.to(device)
         negative = negative.to(device)
@@ -231,7 +257,7 @@ def train_epoch_triplet(
         loss.backward()
         optimizer.step()
         running_loss += loss.item() * anchor.size(0)
-    epoch_loss = running_loss / len(dataloader.dataset)
+    epoch_loss = running_loss / len(dataloader)
     return epoch_loss
 
 
@@ -239,10 +265,11 @@ def validate_triplet(model: nn.Module, device: torch.device, dataloader: DataLoa
     """
     Validates the model for one epoch using triplet loss.
     """
+    print("Validating...")
     model.eval()
     running_loss = 0.0
     with torch.no_grad():
-        for batch_idx, (anchor, positive, negative) in enumerate(dataloader):
+        for batch_idx, (anchor, positive, negative) in tqdm(enumerate(dataloader), total=len(dataloader)):
             anchor = anchor.to(device)
             positive = positive.to(device)
             negative = negative.to(device)
@@ -251,7 +278,7 @@ def validate_triplet(model: nn.Module, device: torch.device, dataloader: DataLoa
             negative_emb = model(negative)
             loss = loss_fn(anchor_emb, positive_emb, negative_emb)
             running_loss += loss.item() * anchor.size(0)
-    epoch_loss = running_loss / len(dataloader.dataset)
+    epoch_loss = running_loss / len(dataloader)
     return epoch_loss
 
 
@@ -259,11 +286,12 @@ def extract_embeddings(model: nn.Module, device: torch.device, dataloader: DataL
     """
     Extracts embeddings and corresponding labels from the dataset.
     """
+    print("Extracting embeddings...")
     model.eval()
     embeddings = []
     all_labels = []
     with torch.no_grad():
-        for batch_idx, (images, labels) in enumerate(dataloader):
+        for batch_idx, (images, labels) in tqdm(enumerate(dataloader), total=len(dataloader)):
             images = images.to(device)
             emb = model(images)
             embeddings.append(emb.cpu())
@@ -272,7 +300,7 @@ def extract_embeddings(model: nn.Module, device: torch.device, dataloader: DataL
     return embeddings.numpy(), labels
 
 
-def train_model_triplet(config, device):
+def train_model_triplet(config, output_folder, device):
     """
     Trains the model using triplet loss and saves the best model based on validation loss.
     """
@@ -304,7 +332,7 @@ def train_model_triplet(config, device):
         # Save the best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), config.save_path)
+            torch.save(model.state_dict(), output_folder / config.save_path)
             print(f"Best model saved to {config.save_path}.")
 
     return model
@@ -313,8 +341,9 @@ def train_model_triplet(config, device):
 def parse_args():
     parser = argparse.ArgumentParser(description='Chimp Face Identification with Triplet Loss')
 
-    parser.add_argument('--data_dir', type=str, required=True, help='Path to the dataset directory.')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training and validation.')
+    parser.add_argument('--output_folder', type=str, default='.', help='Path to the output directory')
+    parser.add_argument('--data_dir', type=str, help='Path to the dataset directory.')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training and validation.')
     parser.add_argument('--num_epochs', type=int, default=25, help='Number of training epochs.')
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate for the optimizer.')
     parser.add_argument('--embedding_dim', type=int, default=128, help='Dimension of the output embeddings.')
@@ -323,7 +352,7 @@ def parse_args():
     parser.add_argument('--val_split', type=float, default=0.2, help='Fraction of data to use for validation.')
     parser.add_argument('--random_seed', type=int, default=42, help='Random seed for reproducibility.')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of worker threads for data loading.')
-    parser.add_argument('--use_gpu', action='store_true', help='Use GPU if available.')
+    parser.add_argument('--device', default=None, help='Use GPU if available.')
     parser.add_argument('--save_path', type=str, default='best_triplet_model.pth', help='Path to save the best model.')
     parser.add_argument('--extract_embeddings', action='store_true', help='Flag to extract embeddings after training.')
     parser.add_argument('--output_embeddings', type=str, default='embeddings.npy', help='Path to save embeddings.')
@@ -336,8 +365,16 @@ def parse_args():
 def main():
     config = parse_args()
 
-    # Set device
-    device = torch.device('cuda' if config.use_gpu and torch.cuda.is_available() else 'cpu')
+    config.data_dir = 'D:/PetFace/images'
+    config.output_folder = 'D:/training_output/vector_embedding_petface'
+    # config.batch_size = 8
+    # config.num_workers = 0
+
+    experiment_folder_name = f'{datetime.now():%Y_%m_%d__%H_%M_%S}'
+    output_folder = Path(config.output_folder) / experiment_folder_name
+    Path(output_folder).mkdir(parents=True, exist_ok=True)
+
+    device = torch.device(config.device if config.device else ('cuda' if torch.cuda.is_available() else 'cpu'))
     print(f"Using device: {device}")
 
     # Set random seeds for reproducibility
@@ -348,12 +385,12 @@ def main():
     np.random.seed(config.random_seed)
 
     # Train the model
-    model = train_model_triplet(config, device)
+    model = train_model_triplet(config, output_folder, device)
 
     # If extraction is requested
     if config.extract_embeddings:
         # Load the best model
-        model.load_state_dict(torch.load(config.save_path))
+        model.load_state_dict(torch.load(output_folder / config.save_path))
         model.to(device)
 
         # Prepare embedding data
@@ -364,8 +401,8 @@ def main():
         print(f"Extracted embeddings shape: {embeddings.shape}")
 
         # Save embeddings and labels
-        np.save(config.output_embeddings, embeddings)
-        np.save(config.output_labels, labels)
+        np.save(output_folder / config.output_embeddings, embeddings)
+        np.save(output_folder / config.output_labels, labels)
         print(f"Embeddings saved to {config.output_embeddings}")
         print(f"Labels saved to {config.output_labels}")
 
