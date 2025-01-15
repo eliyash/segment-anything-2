@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from pathlib import Path
 import cv2
@@ -153,20 +154,19 @@ def prepare_triplet_data(config) -> Tuple[DataLoader, DataLoader, int]:
     # Define transformations
     train_transform = transforms.Compose([
         transforms.ToPILImage(),
+        transforms.RandomRotation(10),
         transforms.RandomResizedCrop(config.image_size),
         transforms.RandomHorizontalFlip(),
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],  # Using ImageNet means
-                             std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
     val_transform = transforms.Compose([
         transforms.ToPILImage(),
         transforms.Resize((config.image_size, config.image_size)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
     # Create Triplet Datasets
@@ -367,8 +367,9 @@ def main():
 
     experiment_folder_name = f'{datetime.now():%Y_%m_%d__%H_%M_%S}'
     output_folder = Path(config.output_folder) / experiment_folder_name
-    Path(output_folder).mkdir(parents=True, exist_ok=True)
+    output_folder.mkdir(parents=True, exist_ok=True)
 
+    (output_folder / 'config.json').write_text(json.dumps(config.__dict__, indent=4))
     device = torch.device(config.device if config.device else ('cuda' if torch.cuda.is_available() else 'cpu'))
     print(f"Using device: {device}")
 
