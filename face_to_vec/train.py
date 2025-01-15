@@ -365,11 +365,6 @@ def parse_args():
 def main():
     config = parse_args()
 
-    config.data_dir = 'D:/PetFace/images'
-    config.output_folder = 'D:/training_output/vector_embedding_petface'
-    # config.batch_size = 8
-    # config.num_workers = 0
-
     experiment_folder_name = f'{datetime.now():%Y_%m_%d__%H_%M_%S}'
     output_folder = Path(config.output_folder) / experiment_folder_name
     Path(output_folder).mkdir(parents=True, exist_ok=True)
