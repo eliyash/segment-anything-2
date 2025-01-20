@@ -5,10 +5,13 @@ import cv2
 import numpy as np
 from typing import List, Tuple
 from collections import defaultdict
+import logging
+from torch.utils.tensorboard import SummaryWriter
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
+from torch.utils.data import DataLoader as DataLoaderSlowSize
 from torchvision import models, transforms
 
 import random
@@ -17,6 +20,22 @@ import argparse
 
 from torchvision.models import ResNet50_Weights
 from tqdm import tqdm
+
+from face_to_vec.plot_embedding import plot_embeddings
+
+
+def setup_logger(output_folder):
+    logger = logging.getLogger("ChimpFaceLogger")
+    logger.setLevel(logging.INFO)
+    handler = logging.FileHandler(output_folder / "training.log")
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    return logger
 
 
 class ChimpFacesDataset(Dataset):
@@ -121,6 +140,17 @@ class TripletDataset(Dataset):
         return len(self.valid_indices)
 
 
+class DataLoader(DataLoaderSlowSize):
+    def __init__(self, *args, **kwargs):
+        super(DataLoader, self).__init__(*args, **kwargs)
+
+        assert hasattr(self.dataset, '__len__'), "Dataset must implement __len__ method"
+        self._len = getattr(self.dataset, '__len__')() // self.batch_size
+
+    def __len__(self):
+        return self._len
+
+
 def prepare_triplet_data(config) -> Tuple[DataLoader, DataLoader, int]:
     """
     Prepares DataLoaders for training and validation using TripletDataset.
@@ -154,18 +184,28 @@ def prepare_triplet_data(config) -> Tuple[DataLoader, DataLoader, int]:
     # Define transformations
     train_transform = transforms.Compose([
         transforms.ToPILImage(),
+
         transforms.RandomRotation(10),
-        transforms.RandomResizedCrop(config.image_size),
+        transforms.Resize((config.image_size, config.image_size)),
+        # transforms.RandomResizedCrop(config.image_size),
         transforms.RandomHorizontalFlip(),
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
+        transforms.RandomGrayscale(p=0.2),
+        transforms.GaussianBlur(kernel_size=3),
+
         transforms.ToTensor(),
+
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        # transforms.RandomErasing(p=0.2),
     ])
 
     val_transform = transforms.Compose([
         transforms.ToPILImage(),
+
         transforms.Resize((config.image_size, config.image_size)),
+
         transforms.ToTensor(),
+
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
@@ -205,8 +245,7 @@ def prepare_embedding_data(config) -> Tuple[DataLoader, List[int]]:
         transforms.ToPILImage(),
         transforms.Resize((config.image_size, config.image_size)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
     embed_dataset = ChimpFacesDataset(file_paths, labels, transform=embed_transform)
@@ -220,14 +259,14 @@ class EmbeddingNet(nn.Module):
     """
     Model that outputs normalized embeddings using a pre-trained ResNet backbone.
     """
-    def __init__(self, embedding_dim: int):
+    def __init__(self, embedding_dim: int, normalize: bool = True):
         super(EmbeddingNet, self).__init__()
         self.backbone = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
         # Replace the final layer
-        num_ftrs = self.backbone.fc.in_features
-        self.backbone.fc = nn.Linear(num_ftrs, embedding_dim)
+        num_features = self.backbone.fc.in_features
+        self.backbone.fc = nn.Linear(num_features, embedding_dim)
         # Optionally, add normalization
-        self.normalize = True
+        self.normalize = normalize
 
     def forward(self, x):
         embedding = self.backbone(x)
@@ -237,12 +276,12 @@ class EmbeddingNet(nn.Module):
 
 
 def train_epoch_triplet(
-        model: nn.Module, device: torch.device, dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn
-):
+        model: nn.Module, device: torch.device, dataloader: DataLoader, optimizer: torch.optim.Optimizer, loss_fn,
+        logger, writer, epoch):
     """
     Trains the model for one epoch using triplet loss.
     """
-    print("Training...")
+    logger.info(f"Training epoch {epoch}...")
     model.train()
     running_loss = 0.0
     for batch_idx, (anchor, positive, negative) in tqdm(enumerate(dataloader), total=len(dataloader)):
@@ -258,18 +297,20 @@ def train_epoch_triplet(
         optimizer.step()
         running_loss += loss.item() * anchor.size(0)
     epoch_loss = running_loss / len(dataloader)
+    logger.info(f"Epoch {epoch} Training Loss: {epoch_loss:.4f}")
+    writer.add_scalar('Loss/Train', epoch_loss, epoch)
     return epoch_loss
 
 
-def validate_triplet(model: nn.Module, device: torch.device, dataloader: DataLoader, loss_fn):
+def validate_triplet(model: nn.Module, device: torch.device, dataloader: DataLoader, loss_fn, logger, writer, epoch):
     """
     Validates the model for one epoch using triplet loss.
     """
-    print("Validating...")
+    logger.info(f"Validating epoch {epoch}...")
     model.eval()
     running_loss = 0.0
     with torch.no_grad():
-        for batch_idx, (anchor, positive, negative) in tqdm(enumerate(dataloader), total=len(dataloader)):
+        for anchor, positive, negative in tqdm(dataloader, total=len(dataloader)):
             anchor = anchor.to(device)
             positive = positive.to(device)
             negative = negative.to(device)
@@ -279,6 +320,8 @@ def validate_triplet(model: nn.Module, device: torch.device, dataloader: DataLoa
             loss = loss_fn(anchor_emb, positive_emb, negative_emb)
             running_loss += loss.item() * anchor.size(0)
     epoch_loss = running_loss / len(dataloader)
+    logger.info(f"Epoch {epoch} Validation Loss: {epoch_loss:.4f}")
+    writer.add_scalar('Loss/Validation', epoch_loss, epoch)
     return epoch_loss
 
 
@@ -291,7 +334,7 @@ def extract_embeddings(model: nn.Module, device: torch.device, dataloader: DataL
     embeddings = []
     all_labels = []
     with torch.no_grad():
-        for batch_idx, (images, labels) in tqdm(enumerate(dataloader), total=len(dataloader)):
+        for images, labels in tqdm(dataloader, total=len(dataloader)):
             images = images.to(device)
             emb = model(images)
             embeddings.append(emb.cpu())
@@ -300,22 +343,24 @@ def extract_embeddings(model: nn.Module, device: torch.device, dataloader: DataL
     return embeddings.numpy(), labels
 
 
-def train_model_triplet(config, output_folder, device):
+def train_model_triplet(config, output_folder, device, logger):
     """
     Trains the model using triplet loss and saves the best model based on validation loss.
     """
+    writer = SummaryWriter(log_dir=output_folder / 'tensorboard_logs')
+
     # Prepare data
     train_loader, val_loader, num_classes = prepare_triplet_data(config)
-    print(f"Number of classes: {num_classes}")
+    logger.info(f"Number of classes: {num_classes}")
 
     # Initialize model
-    model = EmbeddingNet(config.embedding_dim).to(device)
+    model = EmbeddingNet(config.embedding_dim, config.normalize).to(device)
 
     # Define loss function
     loss_fn = nn.TripletMarginLoss(margin=config.margin, p=2)
 
     # Define optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
 
     # Define scheduler
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
@@ -323,18 +368,19 @@ def train_model_triplet(config, output_folder, device):
     best_val_loss = float('inf')
 
     for epoch in range(1, config.num_epochs + 1):
-        train_loss = train_epoch_triplet(model, device, train_loader, optimizer, loss_fn)
-        val_loss = validate_triplet(model, device, val_loader, loss_fn)
+        train_loss = train_epoch_triplet(model, device, train_loader, optimizer, loss_fn, logger, writer, epoch)
+        val_loss = validate_triplet(model, device, val_loader, loss_fn, logger, writer, epoch)
         scheduler.step()
 
-        print(f"Epoch {epoch}/{config.num_epochs} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+        logger.info(f"Epoch {epoch}/{config.num_epochs} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
 
         # Save the best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), output_folder / config.save_path)
-            print(f"Best model saved to {config.save_path}.")
+            logger.info(f"Best model saved to {config.save_path}.")
 
+    writer.close()
     return model
 
 
@@ -346,6 +392,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training and validation.')
     parser.add_argument('--num_epochs', type=int, default=25, help='Number of training epochs.')
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate for the optimizer.')
+    parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay for the optimizer.')
     parser.add_argument('--embedding_dim', type=int, default=128, help='Dimension of the output embeddings.')
     parser.add_argument('--image_size', type=int, default=224, help='Input image size (image_size x image_size).')
     parser.add_argument('--margin', type=float, default=1.0, help='Margin for TripletMarginLoss.')
@@ -357,6 +404,7 @@ def parse_args():
     parser.add_argument('--extract_embeddings', action='store_true', help='Flag to extract embeddings after training.')
     parser.add_argument('--output_embeddings', type=str, default='embeddings.npy', help='Path to save embeddings.')
     parser.add_argument('--output_labels', type=str, default='labels.npy', help='Path to save the labels.')
+    parser.add_argument('--normalize', type=bool, default=True, help='Normalize embeddings to unit length.')
 
     args = parser.parse_args()
     return args
@@ -369,9 +417,13 @@ def main():
     output_folder = Path(config.output_folder) / experiment_folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
 
+    logger = setup_logger(output_folder)
+    logger.info("Starting training process...")
+    logger.info(f"log: {output_folder.as_posix()}")
+
     (output_folder / 'config.json').write_text(json.dumps(config.__dict__, indent=4))
     device = torch.device(config.device if config.device else ('cuda' if torch.cuda.is_available() else 'cpu'))
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
 
     # Set random seeds for reproducibility
     torch.manual_seed(config.random_seed)
@@ -381,7 +433,7 @@ def main():
     np.random.seed(config.random_seed)
 
     # Train the model
-    model = train_model_triplet(config, output_folder, device)
+    model = train_model_triplet(config, output_folder, device, logger)
 
     # If extraction is requested
     if config.extract_embeddings:
@@ -394,13 +446,15 @@ def main():
 
         # Extract embeddings
         embeddings, labels = extract_embeddings(model, device, embed_loader)
-        print(f"Extracted embeddings shape: {embeddings.shape}")
+        logger.info(f"Extracted embeddings shape: {embeddings.shape}")
 
         # Save embeddings and labels
         np.save(output_folder / config.output_embeddings, embeddings)
         np.save(output_folder / config.output_labels, labels)
-        print(f"Embeddings saved to {config.output_embeddings}")
-        print(f"Labels saved to {config.output_labels}")
+        logger.info(f"Embeddings saved to {config.output_embeddings}")
+        logger.info(f"Labels saved to {config.output_labels}")
+        plot_embeddings(config, output_folder, 'tsne')
+        plot_embeddings(config, output_folder, 'pca')
 
 
 if __name__ == '__main__':
