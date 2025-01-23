@@ -1,9 +1,8 @@
 import argparse
 import logging
-import os
 from datetime import datetime
+from pathlib import Path
 
-import numpy as np
 import torch
 from backbones import get_model
 from dataset import get_dataloader
@@ -51,11 +50,14 @@ def main(args):
 
     torch.cuda.set_device(local_rank)
 
-    os.makedirs(cfg.output, exist_ok=True)
-    init_logging(rank, cfg.output)
+    experiment_folder_name = f'{datetime.now():%Y_%m_%d__%H_%M_%S}'
+    output_folder = Path(cfg.output) / experiment_folder_name
+    output_folder.mkdir(parents=True, exist_ok=True)
+    
+    init_logging(rank, output_folder)
 
     summary_writer = (
-        SummaryWriter(log_dir=os.path.join(cfg.output, "tensorboard"))
+        SummaryWriter(log_dir=(output_folder / "tensorboard").as_posix())
         if rank == 0
         else None
     )
@@ -148,7 +150,7 @@ def main(args):
     start_epoch = 0
     global_step = 0
     if cfg.resume:
-        dict_checkpoint = torch.load(os.path.join(cfg.output, f"checkpoint_gpu_{rank}.pt"))
+        dict_checkpoint = torch.load(output_folder / f"checkpoint_gpu_{rank}.pt")
         start_epoch = dict_checkpoint["epoch"]
         global_step = dict_checkpoint["global_step"]
         backbone.module.load_state_dict(dict_checkpoint["state_dict_backbone"])
@@ -225,10 +227,10 @@ def main(args):
                 "state_optimizer": opt.state_dict(),
                 "state_lr_scheduler": lr_scheduler.state_dict()
             }
-            torch.save(checkpoint, os.path.join(cfg.output, f"checkpoint_gpu_{rank}.pt"))
+            torch.save(checkpoint, output_folder / f"checkpoint_gpu_{rank}.pt")
 
         if rank == 0:
-            path_module = os.path.join(cfg.output, "model.pt")
+            path_module = output_folder / "model.pt"
             torch.save(backbone.module.state_dict(), path_module)
 
             if wandb_logger and cfg.save_artifacts:
@@ -241,7 +243,7 @@ def main(args):
             train_loader.reset()
 
     if rank == 0:
-        path_module = os.path.join(cfg.output, "model.pt")
+        path_module = output_folder / "model.pt"
         torch.save(backbone.module.state_dict(), path_module)
         
         if wandb_logger and cfg.save_artifacts:
