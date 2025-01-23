@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +18,7 @@ def plot_embeddings(config, root_folder_path: Path, method: str = 'tsne', perple
         perplexity (int): Perplexity for t-SNE. Ignored if method is 'pca'. Default is 30.
     """
     # Load embeddings and labels
-    embeddings = np.load(root_folder_path / config.output_labels)
+    embeddings = np.load(root_folder_path / config.output_embeddings)
     labels = np.load(root_folder_path / config.output_labels)
 
     if method == 'tsne':
@@ -43,3 +44,16 @@ def plot_embeddings(config, root_folder_path: Path, method: str = 'tsne', perple
     plt.ylabel("Component 2")
     plt.grid(True, linestyle='--', alpha=0.5)
     plt.savefig(root_folder_path / f'embeddings_{method}.png')
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Chimp Face Identification with Triplet Loss')
+
+    parser.add_argument('--output_embeddings', type=str, default='embeddings.npy', help='Path to save embeddings.')
+    parser.add_argument('--output_labels', type=str, default='labels.npy', help='Path to save the labels.')
+
+    args = parser.parse_args()
+
+    root_folder_path = Path('D:/training_output/vector_embedding_ccr_chimp_id/bask')
+    plot_embeddings(args, root_folder_path, method='tsne')
+    plot_embeddings(args, root_folder_path, method='pca')

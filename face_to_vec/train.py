@@ -340,7 +340,7 @@ def extract_embeddings(model: nn.Module, device: torch.device, dataloader: DataL
             embeddings.append(emb.cpu())
             all_labels.extend(labels)
     embeddings = torch.cat(embeddings)
-    return embeddings.numpy(), labels
+    return embeddings.numpy(), np.array(all_labels)
 
 
 def train_model_triplet(config, output_folder, device, logger):
