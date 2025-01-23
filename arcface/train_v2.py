@@ -21,7 +21,11 @@ from torch.distributed.algorithms.ddp_comm_hooks.default_hooks import fp16_compr
 
 assert torch.__version__ >= "1.12.0", "In order to enjoy the features of the new torch, \
 we have upgraded the torch to 1.12.0. torch before than 1.12.0 may not work in the future."
-
+import os
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = '12355'
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+os.environ["RANK"] = "0"
 try:
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
@@ -32,8 +36,7 @@ except KeyError:
     local_rank = 0
     world_size = 1
     distributed.init_process_group(
-        backend="nccl",
-        init_method="tcp://127.0.0.1:12584",
+        backend="gloo",
         rank=rank,
         world_size=world_size,
     )
@@ -252,5 +255,5 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     parser = argparse.ArgumentParser(
         description="Distributed Arcface Training in Pytorch")
-    parser.add_argument("config", type=str, help="py config file")
+    parser.add_argument("-config", type=str, help="py config file")
     main(parser.parse_args())
