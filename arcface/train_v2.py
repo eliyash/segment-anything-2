@@ -23,7 +23,7 @@ we have upgraded the torch to 1.12.0. torch before than 1.12.0 may not work in t
 import os
 os.environ['MASTER_ADDR'] = 'localhost'
 os.environ['MASTER_PORT'] = '12355'
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["RANK"] = "0"
 try:
     rank = int(os.environ["RANK"])
@@ -88,7 +88,19 @@ def main(args):
             print("WandB Data (Entity and Project name) must be provided in config file (base.py).")
             print(f"Config Error: {e}")
     train_loader = get_dataloader(
-        cfg.rec,
+        Path(cfg.rec),
+        'train',
+        local_rank,
+        cfg.batch_size,
+        cfg.dali,
+        cfg.dali_aug,
+        cfg.seed,
+        cfg.num_workers
+    )
+
+    validation_loader = get_dataloader(
+        Path(cfg.rec),
+        'val',
         local_rank,
         cfg.batch_size,
         cfg.dali,
@@ -182,7 +194,9 @@ def main(args):
 
         if isinstance(train_loader, DataLoader):
             train_loader.sampler.set_epoch(epoch)
-        for _, (img, local_labels) in enumerate(train_loader):
+            validation_loader.sampler.set_epoch(epoch)
+        backbone.train()
+        for img, local_labels in train_loader:
             global_step += 1
             local_embeddings = backbone(img)
             loss: torch.Tensor = module_partial_fc(local_embeddings, local_labels)
@@ -241,6 +255,16 @@ def main(args):
                 
         if cfg.dali:
             train_loader.reset()
+
+        backbone.eval()
+        with torch.no_grad():
+            losses = []
+            for img, local_labels in validation_loader:
+                global_step += 1
+                local_embeddings = backbone(img)
+                loss: torch.Tensor = module_partial_fc(local_embeddings, local_labels)
+                losses.append(loss)
+            logging.warning(f'\tValidation loss: {torch.tensor(losses).mean()}')
 
     if rank == 0:
         path_module = output_folder / "model.pt"

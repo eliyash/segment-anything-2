@@ -2,6 +2,7 @@ import numbers
 import os
 import queue as Queue
 import threading
+from pathlib import Path
 from typing import Iterable
 
 import mxnet as mx
@@ -17,7 +18,8 @@ from utils.utils_distributed_sampler import get_dist_info, worker_init_fn
 
 
 def get_dataloader(
-    root_dir,
+    root_dir: Path,
+    dataset_type: str,
     local_rank,
     batch_size,
     dali = False,
@@ -26,8 +28,8 @@ def get_dataloader(
     num_workers = 2,
     ) -> Iterable:
 
-    rec = os.path.join(root_dir, 'train.rec')
-    idx = os.path.join(root_dir, 'train.idx')
+    rec = root_dir / f'{dataset_type}.rec'
+    idx = root_dir / f'{dataset_type}.idx'
     train_set = None
 
     # Synthetic
@@ -36,22 +38,25 @@ def get_dataloader(
         dali = False
 
     # Mxnet RecordIO
-    elif os.path.exists(rec) and os.path.exists(idx):
-        train_set = MXFaceDataset(root_dir=root_dir, local_rank=local_rank)
+    elif rec.exists() and idx.exists():
+        train_set = MXFaceDataset(root_dir=root_dir, local_rank=local_rank, dataset_type=dataset_type)
 
     # Image Folder
     else:
+        image_size = 112
         transform = transforms.Compose([
              transforms.RandomHorizontalFlip(),
+             transforms.Resize((image_size, image_size)),
              transforms.ToTensor(),
+
              transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
              ])
-        train_set = ImageFolder(root_dir, transform)
+        train_set = ImageFolder(root_dir / dataset_type, transform)
 
     # DALI
     if dali:
         return dali_data_iter(
-            batch_size=batch_size, rec_file=rec, idx_file=idx,
+            batch_size=batch_size, rec_file=rec.as_posix(), idx_file=idx.as_posix(),
             num_threads=2, local_rank=local_rank, dali_aug=dali_aug)
 
     rank, world_size = get_dist_info()
@@ -75,6 +80,7 @@ def get_dataloader(
     )
 
     return train_loader
+
 
 class BackgroundGenerator(threading.Thread):
     def __init__(self, generator, local_rank, max_prefetch=6):
@@ -135,15 +141,39 @@ class DataLoaderX(DataLoader):
 
 
 class MXFaceDataset(Dataset):
-    def __init__(self, root_dir, local_rank, image_size=112):
+    def __init__(self, root_dir, local_rank, dataset_type, image_size=112):
         super(MXFaceDataset, self).__init__()
-        self.transform = transforms.Compose(
-            [transforms.ToPILImage(),
-             transforms.RandomHorizontalFlip(),
-             transforms.Resize((image_size, image_size)),
-             transforms.ToTensor(),
-             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-             ])
+
+        if dataset_type == 'train':
+            self.transform = transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.RandomApply([
+                    transforms.RandomHorizontalFlip(),  # Flip horizontally
+                    transforms.RandomRotation(degrees=15),  # Rotate by up to 15 degrees
+                    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),  # Translate and scale
+                ], p=0.8),
+
+                # --- Augmentations to reduce image quality ---
+                transforms.RandomApply([
+                    transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
+                    transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.2),
+                    transforms.RandomAdjustSharpness(sharpness_factor=0.5, p=0.5),
+                ], p=0.8),
+                transforms.Resize((image_size, image_size)),
+
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+                # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+
+        else:
+            self.transform = transforms.Compose(
+                [transforms.ToPILImage(),
+                 transforms.RandomHorizontalFlip(),
+                 transforms.Resize((image_size, image_size)),
+                 transforms.ToTensor(),
+                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+                 ])
         self.root_dir = root_dir
         self.local_rank = local_rank
         path_imgrec = os.path.join(root_dir, 'train.rec')
