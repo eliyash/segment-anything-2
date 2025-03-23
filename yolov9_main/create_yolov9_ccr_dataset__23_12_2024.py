@@ -51,7 +51,8 @@ def save_split_and_save_dataset_in_yolo_format(new_dataset_folder, original_imag
         new_image_paths = []
         for relative_orig_image_path in cases:
             yolo_annotation = all_frames_data[relative_orig_image_path]
-            new_image_file_name = '_'.join(relative_orig_image_path.parts)
+            # new_image_file_name = '_'.join(relative_orig_image_path.parts)
+            new_image_file_name = relative_orig_image_path
             label_path = new_dataset_labels_folder / dataset_type / f'{Path(new_image_file_name).stem}.txt'
             label_path.parent.mkdir(parents=True, exist_ok=True)
             label_path.write_text(yolo_annotation)

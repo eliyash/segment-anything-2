@@ -112,6 +112,19 @@ def main(args):
     backbone = get_model(
         cfg.network, dropout=0.0, fp16=cfg.fp16, num_features=cfg.embedding_size).cuda()
 
+    if cfg.fine_tune:
+        dict_checkpoint = torch.load(Path(cfg.fine_tune) / f"backbone.pth")
+        backbone.load_state_dict(dict_checkpoint)
+        del dict_checkpoint
+
+    # Freeze the first half of the backbone network's modules.
+    child_modules = list(backbone.children())
+    num_children = len(child_modules)
+    for child in child_modules[: num_children // 2]:
+        for param in child.parameters():
+            param.requires_grad = False
+
+    # cfg.embedding_size
     backbone = torch.nn.parallel.DistributedDataParallel(
         module=backbone, broadcast_buffers=False, device_ids=[local_rank], bucket_cap_mb=16,
         find_unused_parameters=True)
@@ -129,6 +142,8 @@ def main(args):
         cfg.interclass_filtering_threshold
     )
 
+    trainable_backbone_params = list(filter(lambda p: p.requires_grad, backbone.parameters()))
+
     if cfg.optimizer == "sgd":
         module_partial_fc = PartialFC_V2(
             margin_loss, cfg.embedding_size, cfg.num_classes,
@@ -136,7 +151,7 @@ def main(args):
         module_partial_fc.train().cuda()
         # TODO the params of partial fc must be last in the params list
         opt = torch.optim.SGD(
-            params=[{"params": backbone.parameters()}, {"params": module_partial_fc.parameters()}],
+            params=[{"params": trainable_backbone_params}, {"params": module_partial_fc.parameters()}],
             lr=cfg.lr, momentum=0.9, weight_decay=cfg.weight_decay)
 
     elif cfg.optimizer == "adamw":
@@ -145,7 +160,7 @@ def main(args):
             cfg.sample_rate, False)
         module_partial_fc.train().cuda()
         opt = torch.optim.AdamW(
-            params=[{"params": backbone.parameters()}, {"params": module_partial_fc.parameters()}],
+            params=[{"params": trainable_backbone_params}, {"params": module_partial_fc.parameters()}],
             lr=cfg.lr, weight_decay=cfg.weight_decay)
     else:
         raise

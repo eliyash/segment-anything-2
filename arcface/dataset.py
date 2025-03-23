@@ -30,28 +30,49 @@ def get_dataloader(
 
     rec = root_dir / f'{dataset_type}.rec'
     idx = root_dir / f'{dataset_type}.idx'
-    train_set = None
+
+    image_size = 112
+    if dataset_type == 'train':
+        transform = transforms.Compose([
+            transforms.RandomApply([
+                transforms.RandomHorizontalFlip(),  # Flip horizontally
+                transforms.RandomRotation(degrees=15),  # Rotate by up to 15 degrees
+                transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),  # Translate and scale
+            ], p=0.8),
+
+            # # --- Augmentations to reduce image quality ---
+            # transforms.RandomApply([
+            #     transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
+            #     transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.2),
+            #     transforms.RandomAdjustSharpness(sharpness_factor=0.5, p=0.5),
+            # ], p=0.8),
+            transforms.Resize((image_size, image_size)),
+
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+    else:
+        transform = transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            transforms.Resize((image_size, image_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ])
 
     # Synthetic
     if root_dir == "synthetic":
-        train_set = SyntheticDataset()
+        data_set = SyntheticDataset()
         dali = False
 
     # Mxnet RecordIO
     elif rec.exists() and idx.exists():
-        train_set = MXFaceDataset(root_dir=root_dir, local_rank=local_rank, dataset_type=dataset_type)
+        data_set = MXFaceDataset(root_dir=root_dir, local_rank=local_rank, transforms=transforms)
 
     # Image Folder
     else:
-        image_size = 112
-        transform = transforms.Compose([
-             transforms.RandomHorizontalFlip(),
-             transforms.Resize((image_size, image_size)),
-             transforms.ToTensor(),
-
-             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-             ])
-        train_set = ImageFolder(root_dir / dataset_type, transform)
+        data_set = ImageFolder(root_dir / dataset_type, transform)
 
     # DALI
     if dali:
@@ -61,7 +82,7 @@ def get_dataloader(
 
     rank, world_size = get_dist_info()
     train_sampler = DistributedSampler(
-        train_set, num_replicas=world_size, rank=rank, shuffle=True, seed=seed)
+        data_set, num_replicas=world_size, rank=rank, shuffle=True, seed=seed)
 
     if seed is None:
         init_fn = None
@@ -70,7 +91,7 @@ def get_dataloader(
 
     train_loader = DataLoaderX(
         local_rank=local_rank,
-        dataset=train_set,
+        dataset=data_set,
         batch_size=batch_size,
         sampler=train_sampler,
         num_workers=num_workers,
@@ -141,39 +162,9 @@ class DataLoaderX(DataLoader):
 
 
 class MXFaceDataset(Dataset):
-    def __init__(self, root_dir, local_rank, dataset_type, image_size=112):
+    def __init__(self, root_dir, local_rank, transforms):
         super(MXFaceDataset, self).__init__()
-
-        if dataset_type == 'train':
-            self.transform = transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.RandomApply([
-                    transforms.RandomHorizontalFlip(),  # Flip horizontally
-                    transforms.RandomRotation(degrees=15),  # Rotate by up to 15 degrees
-                    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),  # Translate and scale
-                ], p=0.8),
-
-                # --- Augmentations to reduce image quality ---
-                transforms.RandomApply([
-                    transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
-                    transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.2),
-                    transforms.RandomAdjustSharpness(sharpness_factor=0.5, p=0.5),
-                ], p=0.8),
-                transforms.Resize((image_size, image_size)),
-
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            ])
-
-        else:
-            self.transform = transforms.Compose(
-                [transforms.ToPILImage(),
-                 transforms.RandomHorizontalFlip(),
-                 transforms.Resize((image_size, image_size)),
-                 transforms.ToTensor(),
-                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                 ])
+        self.transform = transforms
         self.root_dir = root_dir
         self.local_rank = local_rank
         path_imgrec = os.path.join(root_dir, 'train.rec')

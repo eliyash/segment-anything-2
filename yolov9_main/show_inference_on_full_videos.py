@@ -109,12 +109,6 @@ def run(
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-            # Define the codec and create VideoWriter object
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # You can change the codec if needed
-            # out = cv2.VideoWriter(str(output_path / f'{video_path.stem}_detected{video_path.suffix}'),
-            #                       fourcc, fps, (width, height))
-
-            video_frames_data = []
             while (cap.isOpened()):
                 ret, im0s = cap.read()
                 if ret:
@@ -166,5 +160,5 @@ if __name__ == "__main__":
 
     opt.weights = r"C:\Users\Eliahu\Downloads\best_a3124f8b12f1458db290a62b6a630179.pt"
     # opt.output_path = None
-    opt.source = r"D:\per_signal_videos"
+    opt.source = r"D:\per_signal_videos_fixed_interlacing"
     run(**vars(opt))

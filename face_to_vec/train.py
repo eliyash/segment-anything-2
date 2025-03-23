@@ -413,6 +413,15 @@ def parse_args():
 def main():
     config = parse_args()
 
+    config.data_dir = 'D:/faces_dataset/train'
+    config.output_folder = 'D:/training_output/vector_embedding_ccr_chimp_id'
+    # config.num_epochs = 100
+    config.num_epochs = 0
+    config.embedding_dim = 8
+    config.extract_embeddings = True
+    config.normalize = True
+    config.weight_decay = 0.1
+
     experiment_folder_name = f'{datetime.now():%Y_%m_%d__%H_%M_%S}'
     output_folder = Path(config.output_folder) / experiment_folder_name
     output_folder.mkdir(parents=True, exist_ok=True)

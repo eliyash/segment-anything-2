@@ -36,7 +36,7 @@ def plot_embeddings(config, root_folder_path: Path, method: str = 'tsne', perple
     # Plot the embeddings
     plt.figure(figsize=(10, 8))
     scatter = plt.scatter(
-        reduced_embeddings[:, 0], reduced_embeddings[:, 1], c=labels, cmap='tab10', s=15, alpha=0.7
+        reduced_embeddings[:, 0], reduced_embeddings[:, 1], c=labels, cmap='tab20', s=15, alpha=0.7
     )
     plt.colorbar(scatter, label='Class Labels')
     plt.title(title)
@@ -51,9 +51,17 @@ def main():
 
     parser.add_argument('--output_embeddings', type=str, default='embeddings.npy', help='Path to save embeddings.')
     parser.add_argument('--output_labels', type=str, default='labels.npy', help='Path to save the labels.')
+    parser.add_argument('--root_folder', type=str, default='D:/inference/arcface', help='Path to save the labels.')
+    parser.add_argument('--train_name', type=str, default='2025_01_24__00_15_17', help='Path to save the labels.')
 
     args = parser.parse_args()
 
-    root_folder_path = Path('D:/training_output/vector_embedding_ccr_chimp_id/bask')
-    plot_embeddings(args, root_folder_path, method='tsne')
-    plot_embeddings(args, root_folder_path, method='pca')
+    root_folders_path = Path(args.root_folder) / args.train_name
+    for root_folder_path in root_folders_path.iterdir():
+        # root_folder_path = Path('D:/training_output/vector_embedding_ccr_chimp_id/bask')
+        plot_embeddings(args, root_folder_path, method='tsne')
+        # plot_embeddings(args, root_folder_path, method='pca')
+
+
+if __name__ == '__main__':
+    main()
