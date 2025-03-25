@@ -2,6 +2,16 @@ import cv2
 import numpy as np
 
 
+def init_optical_flow_on_frame(frame):
+    # Convert current frame to grayscale.
+    frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # If no previous frame exists, initialize a dense set of feature points.
+    # Increase the number of corners for better coverage.
+    points = cv2.goodFeaturesToTrack(frame_gray, maxCorners=500, qualityLevel=0.01, minDistance=7, blockSize=7)
+    return points
+
+
 def run_optical_flow_on_frame(frame, prev_frame, prev_tracking_data):
     """
     Processes the current frame to:
@@ -17,16 +27,6 @@ def run_optical_flow_on_frame(frame, prev_frame, prev_tracking_data):
     """
     # Convert current frame to grayscale.
     frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # If no previous frame exists, initialize a dense set of feature points.
-    if prev_frame is None:
-        # Increase the number of corners for better coverage.
-        points = cv2.goodFeaturesToTrack(frame_gray, maxCorners=500, qualityLevel=0.01,
-                                         minDistance=7, blockSize=7)
-        # For the first frame, no transformation is applied.
-        transformed_prev_frame = frame.copy()
-        trajectory_frame = frame.copy()
-        return points, transformed_prev_frame, trajectory_frame
 
     # Convert the previous frame to grayscale.
     prev_frame_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)

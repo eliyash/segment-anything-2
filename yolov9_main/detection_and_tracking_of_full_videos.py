@@ -12,7 +12,7 @@ from utils.general import non_max_suppression, scale_boxes
 from utils.torch_utils import select_device
 from utils.augmentations import letterbox
 from yolov9_main.match_bbox_in_video import update_tracking, HistoryStatus
-from yolov9_main.optical_flow import run_optical_flow_on_frame
+from yolov9_main.optical_flow import run_optical_flow_on_frame, init_optical_flow_on_frame
 
 
 def inference_image(
@@ -114,8 +114,8 @@ def run(
 
         updated_bboxes_and_status = []
 
-        tracking_data = None
-        prev_frame = None
+        ret, prev_frame = cap.read()
+        tracking_data = init_optical_flow_on_frame(prev_frame)
         while cap.isOpened():
             ret, frame = cap.read()
             if ret:
@@ -123,12 +123,11 @@ def run(
                 detected_bboxes = inference_image_by_frame(frame)
                 updated_bboxes_and_status = update_tracking(updated_bboxes_and_status, detected_bboxes, iou_threshold=0.3)
 
-                if prev_frame is not None:
-                    if affine_transform_prev_frame is not None:
-                        transformed_prev_frame = cv2.warpAffine(prev_frame, affine_transform_prev_frame, (frame.shape[1], frame.shape[0]))
-                        cv2.imshow('transformed_prev_frame', np.abs(frame.astype(int)-transformed_prev_frame.astype(int)).astype(np.uint8))
-                    cv2.imshow('prev_frame', np.abs(frame.astype(int)-prev_frame.astype(int)).astype(np.uint8))
-                    cv2.imshow('trajectory_frame', trajectory_frame)
+                if affine_transform_prev_frame is not None:
+                    transformed_prev_frame = cv2.warpAffine(prev_frame, affine_transform_prev_frame, (frame.shape[1], frame.shape[0]))
+                    cv2.imshow('transformed_prev_frame', np.abs(frame.astype(int)-transformed_prev_frame.astype(int)).astype(np.uint8))
+                cv2.imshow('prev_frame', np.abs(frame.astype(int)-prev_frame.astype(int)).astype(np.uint8))
+                cv2.imshow('trajectory_frame', trajectory_frame)
 
                 prev_frame = frame
                 cv2.imshow('frame', draw_bboxs_on_frame(frame, updated_bboxes_and_status))
