@@ -15,7 +15,7 @@ from yolov9_main.match_bbox_in_video import update_tracking, HistoryStatus
 
 
 def inference_image(
-        im0s,
+        input_image,
         model,
         image_size=640,  # inference size (pixels)
         conf_thres=0.25,  # confidence threshold
@@ -25,10 +25,9 @@ def inference_image(
         classes=None,  # filter by class: --class 0, or --class 0 2 3
         agnostic_nms=False,  # class-agnostic NMS
 ):
-
     stride, names, pt = model.stride, model.names, model.pt
     # Resize and pad image
-    im = letterbox(im0s, image_size, stride=stride, auto=pt)[0]
+    im = letterbox(input_image, image_size, stride=stride, auto=pt)[0]
     # Convert to RGB, to 3xHxW, float
     im = im.transpose((2, 0, 1))[::-1]
     im = np.ascontiguousarray(im)
@@ -40,20 +39,22 @@ def inference_image(
 
     pred = model(im, augment=False)
     pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
-    return im.shape[2:], pred
+
+    return get_reshaped_bboxes(input_image.shape, im.shape[2:], pred)
 
 
-def add_pred_to_image(im0s, pred_shape, pred):
+def get_reshaped_bboxes(orig_shape, pred_shape, pred):
     boxes = []
     for i, det in enumerate(pred):
         if len(det):
-            det[:, :4] = scale_boxes(pred_shape, det[:, :4], im0s.shape).round()
+            det[:, :4] = scale_boxes(pred_shape, det[:, :4], orig_shape).round()
             for *xyxy, conf, cls in reversed(det):
                 xyxy = list(map(int, xyxy))
 
                 box = int(cls), (xyxy[1], xyxy[3]), (xyxy[0], xyxy[2])
                 boxes.append(box)
     return boxes
+
 
 def uid_to_color(uid):
     # Convert UID to string and hash it
@@ -63,6 +64,7 @@ def uid_to_color(uid):
     # Use the first three bytes as RGB
     r, g, b = hash_digest[0], hash_digest[1], hash_digest[2]
     return r, g, b
+
 
 def draw_bboxs_on_frame(frame, updated_bboxes_and_status):
     new_frame = frame.copy()
@@ -102,33 +104,29 @@ def run(
             in_frame, model, image_size, conf_thres, iou_thres, max_det, device, classes, agnostic_nms
         )
 
-    source = str(source)
-    stride, names, pt = model.stride, model.names, model.pt
-    image_size = check_img_size(image_size, s=stride)  # check image size
+    video_paths = [file_path for file_path in Path(source).glob('*') if file_path.suffix.lower() in ['.mp4', '.avi', '.mov']]
 
-    for video_path in Path(source).glob('*'):
+    for video_path in video_paths:
         print(time.strftime('%Y-%m-%d %H:%M:%S'), video_path)
-        if video_path.suffix.lower() in ['.mp4', '.avi', '.mov']:
-            cap = cv2.VideoCapture(str(video_path))
-            assert cap.isOpened(), f"Video Not Found {video_path}"
+        cap = cv2.VideoCapture(str(video_path))
+        assert cap.isOpened(), f"Video Not Found {video_path}"
 
-            updated_bboxes_and_status = []
+        updated_bboxes_and_status = []
 
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if ret:
-                    pred_shape, pred = inference_image_by_frame(frame)
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if ret:
+                detected_bboxes = inference_image_by_frame(frame)
 
-                    new_bboxes = add_pred_to_image(frame, pred_shape, pred)
-                    updated_bboxes_and_status = update_tracking(updated_bboxes_and_status, new_bboxes, iou_threshold=0.3)
+                updated_bboxes_and_status = update_tracking(updated_bboxes_and_status, detected_bboxes, iou_threshold=0.3)
 
-                    frame = draw_bboxs_on_frame(frame, updated_bboxes_and_status)
-                    cv2.imshow('frame', frame)
-                    cv2.waitKey(1)
-                else:
-                    break
+                frame = draw_bboxs_on_frame(frame, updated_bboxes_and_status)
+                cv2.imshow('frame', frame)
+                cv2.waitKey(1)
+            else:
+                break
 
-            cap.release()
+        cap.release()
 
 
 def parse_opt():
