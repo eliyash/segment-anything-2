@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 from enum import Enum, auto
 import uuid
@@ -148,3 +149,50 @@ def update_tracking(prev_bboxes_and_status, new_bboxes, iou_threshold=0.5):
             output.append((bbox, (uid, HistoryStatus.MISSING)))
 
     return output
+
+
+def transform_bbox(bbox, affine_transform_prev_frame):
+    """
+    Transform a bounding box with an affine transformation.
+
+    Parameters:
+      bbox: tuple in the form (cls, (x_start, x_end), (y_start, y_end))
+      affine_transform_prev_frame: 2x3 affine transformation matrix
+
+    Returns:
+      Transformed bbox in the same format.
+    """
+    cls, (x_start, x_end), (y_start, y_end) = bbox
+
+    # Define the 4 corners of the bbox
+    corners = np.array([
+        [x_start, y_start],
+        [x_end, y_start],
+        [x_end, y_end],
+        [x_start, y_end]
+    ], dtype=np.float32)
+
+    # Reshape to (N, 1, 2) as expected by cv2.transform
+    corners = corners.reshape(-1, 1, 2)
+    transformed_corners = cv2.transform(corners, affine_transform_prev_frame)
+    transformed_corners = transformed_corners.reshape(-1, 2)
+
+    # Compute new bbox from the transformed corners
+    new_x_start = int(np.min(transformed_corners[:, 0]))
+    new_x_end = int(np.max(transformed_corners[:, 0]))
+    new_y_start = int(np.min(transformed_corners[:, 1]))
+    new_y_end = int(np.max(transformed_corners[:, 1]))
+
+    return (cls, (new_x_start, new_x_end), (new_y_start, new_y_end))
+
+def transform_all_bboxes(updated_bboxes_and_status, affine_transform_prev_frame):
+    # Suppose `affine_transform_prev_frame` is your 2x3 matrix and
+    # `updated_bboxes_and_status` is your list of (bbox, (uid, HistoryStatus)).
+
+    updated_transformed_bboxes_and_status = []
+    for bbox, status in updated_bboxes_and_status:
+        transformed_bbox = transform_bbox(bbox, affine_transform_prev_frame)
+        updated_transformed_bboxes_and_status.append((transformed_bbox, status))
+
+    return updated_transformed_bboxes_and_status
+
