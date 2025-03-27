@@ -11,6 +11,7 @@ from models.common import DetectMultiBackend
 from utils.general import non_max_suppression, scale_boxes
 from utils.torch_utils import select_device
 from utils.augmentations import letterbox
+from yolov9_main.kalman_filter import track_objects
 from yolov9_main.match_bbox_in_video import update_tracking, HistoryStatus, transform_all_bboxes
 from yolov9_main.optical_flow import run_optical_flow_on_frame, init_optical_flow_on_frame
 
@@ -67,17 +68,13 @@ def uid_to_color(uid):
     return r, g, b
 
 
-def draw_bboxs_on_frame(frame, updated_bboxes_and_status):
+def draw_bboxs_on_frame(frame, tracked_objects):
     new_frame = frame.copy()
-    for (cls, (xs, xe), (ys, ye)), (uid, status) in updated_bboxes_and_status:
+    for uid, data in tracked_objects.items():
+        (cls, (xs, xe), (ys, ye)) = data['last_bbox']
+
         cv2.rectangle(new_frame, (ys, xs), (ye, xe), uid_to_color(uid), 2)
-        match status:
-            case HistoryStatus.NEW:
-                l_thickness = 3
-            case HistoryStatus.OLD:
-                l_thickness = 2
-            case _:  # HistoryStatus.MISSING:
-                l_thickness = 1
+        l_thickness = 1 if data['missing_frames'] > 0 else 2
 
         cv2.putText(new_frame, uid, (ys, xs + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, uid_to_color(uid), l_thickness)
     return new_frame
@@ -113,28 +110,28 @@ def run(
         assert cap.isOpened(), f"Video Not Found {video_path}"
 
         updated_bboxes_and_status = []
-
+        tracked_objects = {}
         ret, prev_frame = cap.read()
-        tracking_data = init_optical_flow_on_frame(prev_frame)
+        # tracking_data = init_optical_flow_on_frame(prev_frame)
         while cap.isOpened():
             ret, frame = cap.read()
             if ret:
-                tracking_data, affine_transform_prev_frame, trajectory_frame = run_optical_flow_on_frame(frame, prev_frame, tracking_data)
+                # tracking_data, affine_transform_prev_frame, trajectory_frame = run_optical_flow_on_frame(frame, prev_frame, tracking_data)
                 detected_bboxes = inference_image_by_frame(frame)
+                tracked_objects = track_objects(detected_bboxes, tracked_objects)
+                # transformed_prev_frame = prev_frame
+                # if affine_transform_prev_frame is not None:
+                #     transformed_prev_frame = cv2.warpAffine(prev_frame, affine_transform_prev_frame, (frame.shape[1], frame.shape[0]))
+                #     updated_bboxes_and_status = transform_all_bboxes(updated_bboxes_and_status, affine_transform_prev_frame)
+                #
+                # updated_bboxes_and_status = update_tracking(updated_bboxes_and_status, detected_bboxes, iou_threshold=0.3)
 
-                transformed_prev_frame = prev_frame
-                if affine_transform_prev_frame is not None:
-                    transformed_prev_frame = cv2.warpAffine(prev_frame, affine_transform_prev_frame, (frame.shape[1], frame.shape[0]))
-                    updated_bboxes_and_status = transform_all_bboxes(updated_bboxes_and_status, affine_transform_prev_frame)
-
-                updated_bboxes_and_status = update_tracking(updated_bboxes_and_status, detected_bboxes, iou_threshold=0.3)
-
-                cv2.imshow('transformed_prev_frame', np.abs(frame.astype(int) - transformed_prev_frame.astype(int)).astype(np.uint8))
-                cv2.imshow('prev_frame', np.abs(frame.astype(int)-prev_frame.astype(int)).astype(np.uint8))
-                cv2.imshow('trajectory_frame', trajectory_frame)
+                # cv2.imshow('transformed_prev_frame', np.abs(frame.astype(int) - transformed_prev_frame.astype(int)).astype(np.uint8))
+                # cv2.imshow('prev_frame', np.abs(frame.astype(int)-prev_frame.astype(int)).astype(np.uint8))
+                # cv2.imshow('trajectory_frame', trajectory_frame)
 
                 prev_frame = frame
-                cv2.imshow('frame', draw_bboxs_on_frame(frame, updated_bboxes_and_status))
+                cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
                 cv2.waitKey(1)
             else:
                 break

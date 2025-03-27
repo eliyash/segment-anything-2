@@ -12,6 +12,24 @@ def init_optical_flow_on_frame(frame):
     return points
 
 
+def _create_trajectory_frame(inliers, frame, valid_new, valid_prev):
+    trajectory_frame = frame.copy()
+    # If no inliers mask was returned, assume all points are inliers.
+    if inliers is None:
+        inliers = np.ones((len(valid_prev), 1), dtype=bool)
+    inliers = inliers.flatten()
+    # Draw the movement trajectories:
+    # - Green: points that agree with the global (camera) motion.
+    # - Red: points that do not agree (likely local object motion).
+    for (pt_prev, pt_new, inlier) in zip(valid_prev, valid_new, inliers):
+        pt_prev = tuple(np.int32(pt_prev.ravel()))
+        pt_new = tuple(np.int32(pt_new.ravel()))
+        color = (0, 255, 0) if inlier else (0, 0, 255)
+        cv2.line(trajectory_frame, pt_prev, pt_new, color, 2)
+        cv2.circle(trajectory_frame, pt_new, 3, color, -1)
+    return trajectory_frame
+
+
 def run_optical_flow_on_frame(frame, prev_frame, prev_tracking_data):
     """
     Processes the current frame to:
@@ -42,8 +60,9 @@ def run_optical_flow_on_frame(frame, prev_frame, prev_tracking_data):
                      criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
     # Compute optical flow to get new positions of the tracked feature points.
-    new_tracking_data, status, err = cv2.calcOpticalFlowPyrLK(prev_frame_gray, frame_gray,
-                                                              prev_tracking_data, None, **lk_params)
+    new_tracking_data, status, err = cv2.calcOpticalFlowPyrLK(
+        prev_frame_gray, frame_gray, prev_tracking_data, None, **lk_params
+    )
 
     # If optical flow fails, return defaults.
     if new_tracking_data is None or status is None:
@@ -59,22 +78,7 @@ def run_optical_flow_on_frame(frame, prev_frame, prev_tracking_data):
     affine_transform_prev_frame, inliers = cv2.estimateAffinePartial2D(valid_prev, valid_new, method=cv2.RANSAC)
 
     # Prepare the trajectory visualization frame (overlay drawn on the current frame).
-    trajectory_frame = frame.copy()
-
-    # If no inliers mask was returned, assume all points are inliers.
-    if inliers is None:
-        inliers = np.ones((len(valid_prev), 1), dtype=bool)
-    inliers = inliers.flatten()
-
-    # Draw the movement trajectories:
-    # - Green: points that agree with the global (camera) motion.
-    # - Red: points that do not agree (likely local object motion).
-    for (pt_prev, pt_new, inlier) in zip(valid_prev, valid_new, inliers):
-        pt_prev = tuple(np.int32(pt_prev.ravel()))
-        pt_new = tuple(np.int32(pt_new.ravel()))
-        color = (0, 255, 0) if inlier else (0, 0, 255)
-        cv2.line(trajectory_frame, pt_prev, pt_new, color, 2)
-        cv2.circle(trajectory_frame, pt_new, 3, color, -1)
+    trajectory_frame = _create_trajectory_frame(inliers, frame, valid_new, valid_prev)
 
     # Return the updated tracking data along with the two visualizations.
     return new_tracking_data, affine_transform_prev_frame, trajectory_frame
