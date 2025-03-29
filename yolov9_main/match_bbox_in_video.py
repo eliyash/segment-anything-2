@@ -10,7 +10,16 @@ class HistoryStatus(Enum):
     MISSING = auto()
 
 
+uid_count = 0
 def generate_uid():
+    global uid_count
+    new_uid = uid_count
+    uid_count += 1
+    """Generate a new unique identifier."""
+    return str(new_uid)
+
+
+def real_generate_uid():
     """Generate a new unique identifier."""
     return str(uuid.uuid4())
 

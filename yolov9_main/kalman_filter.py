@@ -2,8 +2,9 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from yolov9_main.match_bbox_in_video import generate_uid
-MAX_NUMBER_OF_MISSING_FRAMES = 8
+from yolov9_main.match_bbox_in_video import generate_uid, transform_bbox
+
+MAX_NUMBER_OF_MISSING_FRAMES = 16
 
 def _enforce_float32_kalman(kf):
     kf.transitionMatrix = kf.transitionMatrix.astype(np.float32)
@@ -54,7 +55,7 @@ def _correct_kalman(kf, bbox):
 
 def _bbox_center(bbox):
     cls, (x_start, x_end), (y_start, y_end) = bbox
-    return np.array([(x_end - x_start) / 2, (y_end - y_start) / 2])
+    return np.array([(x_end + x_start) / 2, (y_end + y_start) / 2])
 
 def _compute_cost_matrix(predictions, detections):
     cost = np.zeros((len(predictions), len(detections)), dtype=np.float32)
@@ -66,8 +67,12 @@ def _compute_cost_matrix(predictions, detections):
 def match_predictions_to_detections(tracked_objects, detections, distance_threshold=50):
     ids = list(tracked_objects.keys())
     predictions = [_predict_center(tracked_objects[uid]["kalman"]) for uid in ids]
+    # predictions = [_bbox_center(tracked_objects[uid]["last_bbox"]) for uid in ids]
 
+    print('predictions', predictions)
+    print('detections', detections)
     cost_matrix = _compute_cost_matrix(predictions, detections)
+    print('cost_matrix', cost_matrix)
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
     matches = []
@@ -114,8 +119,20 @@ def update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatc
     return updated_objects
 
 def track_objects(detections, tracked_objects):
-    matches, unmatched_tracks, unmatched_detections = match_predictions_to_detections(
-        tracked_objects, detections)
+    matches, unmatched_tracks, unmatched_detections = match_predictions_to_detections(tracked_objects, detections)
+    return update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatched_detections)
 
-    tracked_objects = update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatched_detections)
-    return tracked_objects
+def _apply_inverse_transform_to_kalman_state(state_orig, T_inv):
+    state = state_orig.copy()
+    x, y = state[0][0], state[1][0]
+    new_pt = cv2.transform(np.array([[[x, y]]], dtype=np.float32), T_inv)[0, 0]
+    dx, dy = state[2][0], state[3][0]
+    # Assume velocity remains unchanged (optional: rotate if T has rotation)
+    return np.array([[new_pt[0]], [new_pt[1]], [dx], [dy]], dtype=np.float32)
+
+def apply_transform_to_tracked_objects(tracked_objects, transformed_prev_frame):
+    transformed_inv_prev_frame = cv2.invertAffineTransform(transformed_prev_frame)
+    for uid, obj in tracked_objects.items():
+        # _apply_inverse_transform_to_kalman_state(obj["kalman"], transformed_prev_frame)
+        obj["kalman"].statePost = _apply_inverse_transform_to_kalman_state(obj["kalman"].statePost, transformed_inv_prev_frame)
+        obj["last_bbox"] = transform_bbox(obj["last_bbox"], transformed_prev_frame)

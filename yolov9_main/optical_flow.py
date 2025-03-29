@@ -30,7 +30,7 @@ def _create_trajectory_frame(inliers, frame, valid_new, valid_prev):
     return trajectory_frame
 
 
-def run_optical_flow_on_frame(frame, prev_frame, prev_tracking_data):
+def calc_optical_flow(frame, prev_frame, optical_flow_state):
     """
     Processes the current frame to:
       - Compute the optical flow.
@@ -50,8 +50,8 @@ def run_optical_flow_on_frame(frame, prev_frame, prev_tracking_data):
     prev_frame_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
 
     # If no previous tracking data exists, detect features in the previous frame.
-    if prev_tracking_data is None:
-        prev_tracking_data = cv2.goodFeaturesToTrack(prev_frame_gray, maxCorners=500, qualityLevel=0.01,
+    if optical_flow_state is None:
+        optical_flow_state = cv2.goodFeaturesToTrack(prev_frame_gray, maxCorners=500, qualityLevel=0.01,
                                                      minDistance=7, blockSize=7)
 
     # Parameters for Lucas-Kanade optical flow.
@@ -61,16 +61,16 @@ def run_optical_flow_on_frame(frame, prev_frame, prev_tracking_data):
 
     # Compute optical flow to get new positions of the tracked feature points.
     new_tracking_data, status, err = cv2.calcOpticalFlowPyrLK(
-        prev_frame_gray, frame_gray, prev_tracking_data, None, **lk_params
+        prev_frame_gray, frame_gray, optical_flow_state, None, **lk_params
     )
 
     # If optical flow fails, return defaults.
     if new_tracking_data is None or status is None:
-        return prev_tracking_data, prev_frame.copy(), frame.copy()
+        return optical_flow_state, prev_frame.copy(), frame.copy()
 
     # Select only the valid points where tracking was successful.
     status = status.flatten()
-    valid_prev = prev_tracking_data[status == 1]
+    valid_prev = optical_flow_state[status == 1]
     valid_new = new_tracking_data[status == 1]
 
     # Estimate an affine transform that represents the global camera movement.
