@@ -34,7 +34,7 @@ def _create_kalman_filter(bbox):
         [0, 0, 0, 1]
     ], dtype=np.float32)
 
-    kf.processNoiseCov = np.eye(4, dtype=np.float32) * 1e-2
+    kf.processNoiseCov = np.eye(4, dtype=np.float32) * 1e-3
     kf.measurementNoiseCov = np.eye(2, dtype=np.float32) * 1e-1
     kf.errorCovPost = np.eye(4, dtype=np.float32)
 
@@ -124,15 +124,15 @@ def track_objects(detections, tracked_objects):
 
 def _apply_inverse_transform_to_kalman_state(state_orig, T_inv):
     state = state_orig.copy()
-    x, y = state[0][0], state[1][0]
+    y, x = state[0][0], state[1][0]
     new_pt = cv2.transform(np.array([[[x, y]]], dtype=np.float32), T_inv)[0, 0]
-    dx, dy = state[2][0], state[3][0]
+    dy, dx = state[2][0], state[3][0]
     # Assume velocity remains unchanged (optional: rotate if T has rotation)
-    return np.array([[new_pt[0]], [new_pt[1]], [dx], [dy]], dtype=np.float32)
+    return np.array([[new_pt[1]], [new_pt[0]], [dx], [dy]], dtype=np.float32)
 
 def apply_transform_to_tracked_objects(tracked_objects, transformed_prev_frame):
-    transformed_inv_prev_frame = cv2.invertAffineTransform(transformed_prev_frame)
+    # transformed_inv_prev_frame = cv2.invertAffineTransform(transformed_prev_frame)
     for uid, obj in tracked_objects.items():
         # _apply_inverse_transform_to_kalman_state(obj["kalman"], transformed_prev_frame)
-        obj["kalman"].statePost = _apply_inverse_transform_to_kalman_state(obj["kalman"].statePost, transformed_inv_prev_frame)
+        obj["kalman"].statePost = _apply_inverse_transform_to_kalman_state(obj["kalman"].statePost, transformed_prev_frame)
         obj["last_bbox"] = transform_bbox(obj["last_bbox"], transformed_prev_frame)

@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import time
 from pathlib import Path
+from unittest.mock import Mock
 
 import cv2
 import numpy as np
@@ -11,7 +12,7 @@ from models.common import DetectMultiBackend
 from utils.general import non_max_suppression, scale_boxes
 from utils.torch_utils import select_device
 from utils.augmentations import letterbox
-from yolov9_main.kalman_filter import track_objects, apply_transform_to_tracked_objects
+from yolov9_main.kalman_filter import track_objects, apply_transform_to_tracked_objects, _predict_center
 from yolov9_main.optical_flow import calc_optical_flow, init_optical_flow_on_frame
 
 
@@ -19,7 +20,7 @@ def inference_image(
         input_image,
         model,
         image_size=640,  # inference size (pixels)
-        conf_thres=0.25,  # confidence threshold
+        conf_thres=0.50,  # confidence threshold
         iou_thres=0.45,  # NMS IoU threshold
         max_det=1000,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
@@ -71,11 +72,14 @@ def draw_bboxs_on_frame(frame, tracked_objects):
     new_frame = frame.copy()
     for uid, data in tracked_objects.items():
         (cls, (xs, xe), (ys, ye)) = data['last_bbox']
-
-        cv2.rectangle(new_frame, (ys, xs), (ye, xe), uid_to_color(uid), 2)
+        color = uid_to_color(uid)
+        cv2.rectangle(new_frame, (ys, xs), (ye, xe), color, 2)
         l_thickness = 1 if data['missing_frames'] > 0 else 2
         text = f'missing_{uid}' if data['missing_frames'] > 0 else uid
-        cv2.putText(new_frame, text, (ys, xs + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, uid_to_color(uid), l_thickness)
+        cv2.putText(new_frame, text, (ys, xs + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, color, l_thickness)
+
+        x, y = _predict_center(data["kalman"]).astype(int)
+        cv2.circle(new_frame, (y, x), 2, color, 2)
     return new_frame
 
 

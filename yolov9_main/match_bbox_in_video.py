@@ -160,13 +160,13 @@ def update_tracking(prev_bboxes_and_status, new_bboxes, iou_threshold=0.5):
     return output
 
 
-def transform_bbox(bbox, affine_transform_prev_frame):
+def transform_bbox(bbox, affine_transform):
     """
     Transform a bounding box with an affine transformation.
 
     Parameters:
       bbox: tuple in the form (cls, (x_start, x_end), (y_start, y_end))
-      affine_transform_prev_frame: 2x3 affine transformation matrix
+      affine_transform: 2x3 affine transformation matrix
 
     Returns:
       Transformed bbox in the same format.
@@ -179,12 +179,12 @@ def transform_bbox(bbox, affine_transform_prev_frame):
         [x_end, y_start],
         [x_end, y_end],
         [x_start, y_end]
-    ], dtype=np.float32)
+    ], dtype=np.float32)[:, ::-1]
 
     # Reshape to (N, 1, 2) as expected by cv2.transform
     corners = corners.reshape(-1, 1, 2)
-    transformed_corners = cv2.transform(corners, affine_transform_prev_frame)
-    transformed_corners = transformed_corners.reshape(-1, 2)
+    transformed_corners = cv2.transform(corners, affine_transform)
+    transformed_corners = transformed_corners.reshape(-1, 2)[:, ::-1]
 
     # Compute new bbox from the transformed corners
     new_x_start = int(np.min(transformed_corners[:, 0]))
@@ -192,7 +192,8 @@ def transform_bbox(bbox, affine_transform_prev_frame):
     new_y_start = int(np.min(transformed_corners[:, 1]))
     new_y_end = int(np.max(transformed_corners[:, 1]))
 
-    return (cls, (new_x_start, new_x_end), (new_y_start, new_y_end))
+    return cls, (new_x_start, new_x_end), (new_y_start, new_y_end)
+
 
 def transform_all_bboxes(updated_bboxes_and_status, affine_transform_prev_frame):
     # Suppose `affine_transform_prev_frame` is your 2x3 matrix and
