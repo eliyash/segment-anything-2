@@ -2,19 +2,17 @@ import argparse
 import hashlib
 import time
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 import cv2
 import numpy as np
 import torch
 
-from ByteTrack.yolox.tracker.byte_tracker import BYTETracker
 from models.common import DetectMultiBackend
 from utils.general import non_max_suppression, scale_boxes
 from utils.torch_utils import select_device
 from utils.augmentations import letterbox
 from yolov9_main.kalman_filter import track_objects, apply_transform_to_tracked_objects, _predict_center
-from yolov9_main.match_bbox_in_video import transform_bbox, transform_all_bboxes
 from yolov9_main.optical_flow import calc_optical_flow, init_optical_flow_on_frame
 
 
@@ -85,133 +83,6 @@ def draw_bboxs_on_frame(frame, tracked_objects):
     return new_frame
 
 
-def get_args_parser():
-    parser = argparse.ArgumentParser("YOLOX Eval")
-    parser.add_argument("-expn", "--experiment-name", type=str, default=None)
-    parser.add_argument("-n", "--name", type=str, default=None, help="model name")
-
-    # distributed
-    parser.add_argument(
-        "--dist-backend", default="nccl", type=str, help="distributed backend"
-    )
-    parser.add_argument(
-        "--dist-url",
-        default=None,
-        type=str,
-        help="url used to set up distributed training",
-    )
-    parser.add_argument("-b", "--batch-size", type=int, default=64, help="batch size")
-    parser.add_argument(
-        "-d", "--devices", default=None, type=int, help="device for training"
-    )
-    parser.add_argument(
-        "--local_rank", default=0, type=int, help="local rank for dist training"
-    )
-    parser.add_argument(
-        "--num_machines", default=1, type=int, help="num of node for training"
-    )
-    parser.add_argument(
-        "--machine_rank", default=0, type=int, help="node rank for multi-node training"
-    )
-    parser.add_argument(
-        "-f",
-        "--exp_file",
-        default=None,
-        type=str,
-        help="pls input your expriment description file",
-    )
-    parser.add_argument(
-        "--fp16",
-        dest="fp16",
-        default=False,
-        action="store_true",
-        help="Adopting mix precision evaluating.",
-    )
-    parser.add_argument(
-        "--fuse",
-        dest="fuse",
-        default=False,
-        action="store_true",
-        help="Fuse conv and bn for testing.",
-    )
-    parser.add_argument(
-        "--trt",
-        dest="trt",
-        default=False,
-        action="store_true",
-        help="Using TensorRT model for testing.",
-    )
-    parser.add_argument(
-        "--test",
-        dest="test",
-        default=False,
-        action="store_true",
-        help="Evaluating on test-dev set.",
-    )
-    parser.add_argument(
-        "--speed",
-        dest="speed",
-        default=False,
-        action="store_true",
-        help="speed test only.",
-    )
-    parser.add_argument(
-        "opts",
-        help="Modify config options using the command-line",
-        default=None,
-        nargs=argparse.REMAINDER,
-    )
-    # det args
-    parser.add_argument("-c", "--ckpt", default=None, type=str, help="ckpt for eval")
-    parser.add_argument("--conf", default=0.01, type=float, help="test conf")
-    parser.add_argument("--nms", default=0.7, type=float, help="test nms threshold")
-    parser.add_argument("--tsize", default=None, type=int, help="test img size")
-    parser.add_argument("--seed", default=None, type=int, help="eval seed")
-    # tracking args
-    parser.add_argument("--track_thresh", type=float, default=0.6, help="tracking confidence threshold")
-    parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
-    parser.add_argument("--match_thresh", type=float, default=0.9, help="matching threshold for tracking")
-    parser.add_argument("--min-box-area", type=float, default=100, help='filter out tiny boxes')
-    parser.add_argument("--mot20", dest="mot20", default=False, action="store_true", help="test mot20.")
-    return parser
-
-
-def simple_movement_capture(cap):
-    for _ in range(10):
-        cap.read()
-    ret, prev_frame = cap.read()
-    orig_frame = prev_frame
-
-    i = 1
-    move_in_x = True
-
-    def simple_cap_read():
-        nonlocal i
-        frame = np.zeros_like(orig_frame)
-        if move_in_x:
-            frame[:, i:] = orig_frame[:, :-i]
-        else:
-            frame[i:, :] = orig_frame[:-i, :]
-
-        i += 20
-        return True, frame
-
-    cap = Mock()
-    cap.read = simple_cap_read
-    return cap
-
-def draw_byte_track(frame, online_targets):
-    frame = frame.copy()
-    for t in online_targets:
-        tlwh = t.tlwh  # top-left width-height
-        tid = t.track_id
-        x1, y1, w, h = tlwh
-        print(x1, y1, w, h)
-        cv2.rectangle(frame, (int(y1), int(x1)), (int(y1 + h), int(x1 + w)), (0, 255, 0), 2)
-        cv2.putText(frame, f'ID {tid}', (int(y1), int(x1) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0),
-                    2)
-    return frame
-
 @torch.no_grad()
 def run(
         source,
@@ -236,52 +107,28 @@ def run(
 
     video_paths = [file_path for file_path in Path(source).glob('*') if file_path.suffix.lower() in ['.mp4', '.avi', '.mov']]
 
-    class LoggingMock(Mock):
-        def __getattr__(self, name):
-            print(f"Accessed property: {name}")
-            return super().__getattr__(name)
-
-    args = LoggingMock()
-
-    args.track_thresh=0.5
-    args.track_buffer=30
-    args.match_thresh=0.7
-    args.mot20=False
-    tracker = BYTETracker(args)
-
     for video_path in video_paths:
         print(time.strftime('%Y-%m-%d %H:%M:%S'), video_path)
         cap = cv2.VideoCapture(str(video_path))
         assert cap.isOpened(), f"Video Not Found {video_path}"
 
-        # cap = simple_movement_capture(cap)
-
         tracked_objects = {}
         ret, prev_frame = cap.read()
-        # optical_flow_state = init_optical_flow_on_frame(prev_frame)
-        # full_motion_transform = np.eye(3)
+        optical_flow_state = init_optical_flow_on_frame(prev_frame)
         while cap.isOpened():
             ret, frame = cap.read()
             if ret:
-                # optical_flow_state, motion_transform, _ = calc_optical_flow(frame, prev_frame, optical_flow_state)
-                # full_motion_transform = full_motion_transform @ motion_transform
                 detected_bboxes = inference_image_by_frame(frame)
-                # transformed_detected_bboxes = transform_all_bboxes(detected_bboxes, full_motion_transform)
 
-                dets_for_tracker = np.array([(x1, y1, x2, y2, 0.8) for cls, (x1, x2), (y1, y2) in detected_bboxes], dtype=float)
-                if len(dets_for_tracker.shape) == 1:
-                    dets_for_tracker = np.zeros((0, 5), dtype=float)
-                # print(dets_for_tracker.shape)
-                online_targets = tracker.update(dets_for_tracker)
-                print('dets_for_tracker', dets_for_tracker, 'online_targets', online_targets, detected_bboxes)
-                #
-                # if motion_transform is not None:
-                #     apply_transform_to_tracked_objects(tracked_objects, motion_transform)
-                #
-                # tracked_objects = track_objects(detected_bboxes, tracked_objects)
+                optical_flow_state, motion_transform, _ = calc_optical_flow(frame, prev_frame, optical_flow_state)
 
-                cv2.imshow('frame', draw_byte_track(frame, online_targets))
-                # cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
+                if motion_transform is not None:
+                    apply_transform_to_tracked_objects(tracked_objects, motion_transform)
+
+                tracked_objects = track_objects(detected_bboxes, tracked_objects)
+
+                prev_frame = frame
+                cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
                 cv2.waitKey(1)
             else:
                 break
@@ -306,10 +153,19 @@ def parse_opt():
 
 
 def main():
+    data_name = 'per_signal_videos_fixed_interlacing'
+    data_folder = Path('D:/')
+    local_data_folder = Path('C:\Workspace\ChimpanzeesThesis\data_local_copy')
+    if (local_data_folder / data_name).exists():
+        source = local_data_folder / data_name
+    else:
+        source = data_folder / data_name
+
     opt = parse_opt()
 
+
     opt.weights = r"C:\Users\Eliahu\Downloads\best_4d8126c8128a4603bfd69daa922e8d38.pt"
-    opt.source = r"D:\per_signal_videos_fixed_interlacing"
+    opt.source = source.as_posix()
     opt.conf_thres = 0.5
     run(**vars(opt))
 
