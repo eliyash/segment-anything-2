@@ -64,10 +64,12 @@ def _compute_cost_matrix(predictions, detections):
             cost[i, j] = np.linalg.norm(pred - _bbox_center(det))
     return cost
 
-def match_predictions_to_detections(tracked_objects, detections, distance_threshold=50):
+def match_predictions_to_detections(tracked_objects, detections, use_kalman, distance_threshold=50):
     ids = list(tracked_objects.keys())
-    # predictions = [_predict_center(tracked_objects[uid]["kalman"]) for uid in ids]
-    predictions = [_bbox_center(tracked_objects[uid]["last_bbox"]) for uid in ids]
+    if use_kalman:
+        predictions = [_predict_center(tracked_objects[uid]["kalman"]) for uid in ids]
+    else:
+        predictions = [_bbox_center(tracked_objects[uid]["last_bbox"]) for uid in ids]
 
     # print('predictions', predictions)
     # print('detections', detections)
@@ -118,8 +120,8 @@ def update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatc
 
     return updated_objects
 
-def track_objects(detections, tracked_objects):
-    matches, unmatched_tracks, unmatched_detections = match_predictions_to_detections(tracked_objects, detections)
+def track_objects(detections, tracked_objects, use_kalman):
+    matches, unmatched_tracks, unmatched_detections = match_predictions_to_detections(tracked_objects, detections, use_kalman)
     return update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatched_detections)
 
 def _apply_inverse_transform_to_kalman_state(state_orig, T_inv):
@@ -129,11 +131,3 @@ def _apply_inverse_transform_to_kalman_state(state_orig, T_inv):
     dy, dx = state[2][0], state[3][0]
     # Assume velocity remains unchanged (optional: rotate if T has rotation)
     return np.array([[new_pt[1]], [new_pt[0]], [dx], [dy]], dtype=np.float32)
-
-def apply_transform_to_tracked_objects(tracked_objects, transformed_prev_frame):
-    # transformed_inv_prev_frame = cv2.invertAffineTransform(transformed_prev_frame)
-    for uid, obj in tracked_objects.items():
-        obj["last_bbox"] = transform_bbox(obj["last_bbox"], transformed_prev_frame)
-        # _apply_inverse_transform_to_kalman_state(obj["kalman"], transformed_prev_frame)
-        obj["kalman"].statePost = _apply_inverse_transform_to_kalman_state(obj["kalman"].statePost, transformed_prev_frame)
-        obj["last_bbox"] = transform_bbox(obj["last_bbox"], transformed_prev_frame)

@@ -51,34 +51,59 @@ def calc_optical_flow(frame, prev_frame, prev_bboxes):
 
     # If no previous tracking data exists, detect features in the previous frame.
     camera_tracking_points = cv2.goodFeaturesToTrack(prev_frame_gray, maxCorners=2000, qualityLevel=0.01, minDistance=50, blockSize=7)
+    camera_tracking_points_tags = [-1]*len(camera_tracking_points)
 
     bboxes_tracking_points = []
-    for _, (x_start, x_end), (y_start, y_end) in prev_bboxes:
-        box_center = np.array([[[(y_end + y_start) // 2, (x_end + x_start) // 2]]], dtype=np.float32)
-        bboxes_tracking_points.append(box_center)
+    bboxes_tracking_points_tags = []
+    for ind, (_, (x_start, x_end), (y_start, y_end)) in enumerate(prev_bboxes):
+        bbox_mask = np.zeros_like(prev_frame_gray, dtype=np.uint8)
+        bbox_mask[y_start:y_end, x_start:x_end] = 255
+        bbox_tracking_points = cv2.goodFeaturesToTrack(
+            prev_frame_gray, maxCorners=100, qualityLevel=0.001, minDistance=4, blockSize=7, mask=bbox_mask
+        )
+        if bbox_tracking_points is not None:
+            bboxes_tracking_points.append(bbox_tracking_points)
+            bboxes_tracking_points_tags.append([ind]*len(bbox_tracking_points))
 
 
     # Compute optical flow to get new positions of the tracked feature points.
     all_tracking_points = np.concatenate((camera_tracking_points, *bboxes_tracking_points), axis=0)
+    all_tracking_points_indexes = np.concatenate((camera_tracking_points_tags, *bboxes_tracking_points_tags), axis=0)
     new_tracking_data, status, err = cv2.calcOpticalFlowPyrLK(
         prev_frame_gray, frame_gray, all_tracking_points, None, **LK_PARAMS
     )
 
     # If optical flow fails, return defaults.
     if new_tracking_data is None or status is None:
-        return all_tracking_points, prev_frame.copy(), frame.copy()
+        return None, [], frame.copy()
 
     # Select only the valid points where tracking was successful.
     status = status.flatten()
     valid_prev = all_tracking_points[status == 1]
     valid_new = new_tracking_data[status == 1]
+    valid_tracking_points_indexes = all_tracking_points_indexes[status == 1]
+
+    camera_valid_prev = valid_prev[valid_tracking_points_indexes == -1]
+    camera_valid_new = valid_new[valid_tracking_points_indexes == -1]
 
     # Estimate an affine transform that represents the global camera movement.
     # This transformation captures translation, rotation, and scaling.
-    affine_transform_prev_frame, inliers = cv2.estimateAffinePartial2D(valid_prev, valid_new, method=cv2.RANSAC)
+    global_camera_transform, inliers = cv2.estimateAffinePartial2D(camera_valid_prev, camera_valid_new, method=cv2.RANSAC)
+
+    per_bbox_transform = []
+    for ind in range(len(prev_bboxes)):
+        valid_indexes = (valid_tracking_points_indexes == ind)
+        if np.any(valid_indexes):
+            bbox_valid_prev = valid_prev[valid_indexes]
+            bbox_valid_new = valid_new[valid_indexes]
+            bbox_camera_transform, _ = cv2.estimateAffinePartial2D(bbox_valid_prev, bbox_valid_new, method=cv2.RANSAC)
+
+        else:
+            bbox_camera_transform = None
+        per_bbox_transform.append(bbox_camera_transform)
 
     # Prepare the trajectory visualization frame (overlay drawn on the current frame).
     trajectory_frame = _create_trajectory_frame(inliers, frame, valid_new, valid_prev)
 
     # Return the updated tracking data along with the two visualizations.
-    return affine_transform_prev_frame, [], trajectory_frame
+    return global_camera_transform, per_bbox_transform, trajectory_frame

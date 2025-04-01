@@ -2,7 +2,6 @@ import argparse
 import hashlib
 import time
 from pathlib import Path
-from unittest.mock import Mock
 
 import cv2
 import numpy as np
@@ -12,7 +11,8 @@ from models.common import DetectMultiBackend
 from utils.general import non_max_suppression, scale_boxes
 from utils.torch_utils import select_device
 from utils.augmentations import letterbox
-from yolov9_main.kalman_filter import track_objects, apply_transform_to_tracked_objects, _predict_center
+from yolov9_main.kalman_filter import track_objects, _predict_center, \
+    _apply_inverse_transform_to_kalman_state
 from yolov9_main.match_bbox_in_video import transform_bbox
 from yolov9_main.optical_flow import calc_optical_flow
 
@@ -130,15 +130,15 @@ def run(
                 global_affine_transform, per_bbox_affine_transforms, trajectory_frame = calc_optical_flow(frame, prev_frame, prev_bboxes)
 
                 if global_affine_transform is not None:
-                    apply_transform_to_tracked_objects(tracked_objects, global_affine_transform)
+                    for uid, bbox_transform in zip(uids, per_bbox_affine_transforms):
+                        transform = bbox_transform if bbox_transform is not None else global_affine_transform
+                        tracked_objects[uid]["last_bbox"] = transform_bbox(tracked_objects[uid]["last_bbox"], transform)
+                        tracked_objects[uid]["kalman"].statePost = _apply_inverse_transform_to_kalman_state(tracked_objects[uid]["kalman"].statePost, transform)
                 else:
                     print('\tlost tracking')
 
-                for uid, bbox_transform in zip(uids, per_bbox_affine_transforms):
-                    if bbox_transform is not None:
-                        tracked_objects[uid]["last_bbox"] = transform_bbox(tracked_objects[uid]["last_bbox"], bbox_transform)
 
-                tracked_objects = track_objects(detected_bboxes, tracked_objects)
+                tracked_objects = track_objects(detected_bboxes, tracked_objects, use_kalman=True)
 
                 prev_frame = frame
                 # cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
