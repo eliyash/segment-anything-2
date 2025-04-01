@@ -13,7 +13,8 @@ from utils.general import non_max_suppression, scale_boxes
 from utils.torch_utils import select_device
 from utils.augmentations import letterbox
 from yolov9_main.kalman_filter import track_objects, apply_transform_to_tracked_objects, _predict_center
-from yolov9_main.optical_flow import calc_optical_flow, init_optical_flow_on_frame
+from yolov9_main.match_bbox_in_video import transform_bbox
+from yolov9_main.optical_flow import calc_optical_flow
 
 
 def inference_image(
@@ -105,7 +106,12 @@ def run(
             in_frame, model, image_size, conf_thres, iou_thres, max_det, device, classes, agnostic_nms
         )
 
-    video_paths = [file_path for file_path in Path(source).glob('*') if file_path.suffix.lower() in ['.mp4', '.avi', '.mov']]
+    video_paths = sorted(
+        [
+             file_path for file_path in Path(source).glob('*')
+             if file_path.suffix.lower() in ['.mp4', '.avi', '.mov']
+        ]
+    )
 
     for video_path in video_paths:
         print(time.strftime('%Y-%m-%d %H:%M:%S'), video_path)
@@ -114,21 +120,29 @@ def run(
 
         tracked_objects = {}
         ret, prev_frame = cap.read()
-        optical_flow_state = init_optical_flow_on_frame(prev_frame)
         while cap.isOpened():
             ret, frame = cap.read()
             if ret:
                 detected_bboxes = inference_image_by_frame(frame)
 
-                optical_flow_state, motion_transform, _ = calc_optical_flow(frame, prev_frame, optical_flow_state)
+                uids = list(tracked_objects.keys())
+                prev_bboxes = [tracked_objects[uid]["last_bbox"] for uid in uids]
+                global_affine_transform, per_bbox_affine_transforms, trajectory_frame = calc_optical_flow(frame, prev_frame, prev_bboxes)
 
-                if motion_transform is not None:
-                    apply_transform_to_tracked_objects(tracked_objects, motion_transform)
+                if global_affine_transform is not None:
+                    apply_transform_to_tracked_objects(tracked_objects, global_affine_transform)
+                else:
+                    print('\tlost tracking')
+
+                for uid, bbox_transform in zip(uids, per_bbox_affine_transforms):
+                    if bbox_transform is not None:
+                        tracked_objects[uid]["last_bbox"] = transform_bbox(tracked_objects[uid]["last_bbox"], bbox_transform)
 
                 tracked_objects = track_objects(detected_bboxes, tracked_objects)
 
                 prev_frame = frame
-                cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
+                # cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
+                cv2.imshow('trajectory_frame', draw_bboxs_on_frame(trajectory_frame, tracked_objects))
                 cv2.waitKey(1)
             else:
                 break

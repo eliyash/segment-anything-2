@@ -66,13 +66,13 @@ def _compute_cost_matrix(predictions, detections):
 
 def match_predictions_to_detections(tracked_objects, detections, distance_threshold=50):
     ids = list(tracked_objects.keys())
-    predictions = [_predict_center(tracked_objects[uid]["kalman"]) for uid in ids]
-    # predictions = [_bbox_center(tracked_objects[uid]["last_bbox"]) for uid in ids]
+    # predictions = [_predict_center(tracked_objects[uid]["kalman"]) for uid in ids]
+    predictions = [_bbox_center(tracked_objects[uid]["last_bbox"]) for uid in ids]
 
-    print('predictions', predictions)
-    print('detections', detections)
+    # print('predictions', predictions)
+    # print('detections', detections)
     cost_matrix = _compute_cost_matrix(predictions, detections)
-    print('cost_matrix', cost_matrix)
+    # print('cost_matrix', cost_matrix)
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
     matches = []
@@ -133,6 +133,7 @@ def _apply_inverse_transform_to_kalman_state(state_orig, T_inv):
 def apply_transform_to_tracked_objects(tracked_objects, transformed_prev_frame):
     # transformed_inv_prev_frame = cv2.invertAffineTransform(transformed_prev_frame)
     for uid, obj in tracked_objects.items():
+        obj["last_bbox"] = transform_bbox(obj["last_bbox"], transformed_prev_frame)
         # _apply_inverse_transform_to_kalman_state(obj["kalman"], transformed_prev_frame)
         obj["kalman"].statePost = _apply_inverse_transform_to_kalman_state(obj["kalman"].statePost, transformed_prev_frame)
         obj["last_bbox"] = transform_bbox(obj["last_bbox"], transformed_prev_frame)

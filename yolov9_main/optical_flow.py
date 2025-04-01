@@ -1,16 +1,9 @@
 import cv2
 import numpy as np
 
-
-def init_optical_flow_on_frame(frame):
-    # Convert current frame to grayscale.
-    frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # If no previous frame exists, initialize a dense set of feature points.
-    # Increase the number of corners for better coverage.
-    points = cv2.goodFeaturesToTrack(frame_gray, maxCorners=500, qualityLevel=0.01, minDistance=7, blockSize=7)
-    return points
-
+LK_PARAMS = dict(
+    winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
+)
 
 def _create_trajectory_frame(inliers, frame, valid_new, valid_prev):
     trajectory_frame = frame.copy()
@@ -22,15 +15,22 @@ def _create_trajectory_frame(inliers, frame, valid_new, valid_prev):
     # - Green: points that agree with the global (camera) motion.
     # - Red: points that do not agree (likely local object motion).
     for (pt_prev, pt_new, inlier) in zip(valid_prev, valid_new, inliers):
-        pt_prev = tuple(np.int32(pt_prev.ravel()))
-        pt_new = tuple(np.int32(pt_new.ravel()))
-        color = (0, 255, 0) if inlier else (0, 0, 255)
-        cv2.line(trajectory_frame, pt_prev, pt_new, color, 2)
-        cv2.circle(trajectory_frame, pt_new, 3, color, -1)
+        prev_pt = tuple(np.int32(pt_prev.ravel()))
+        new_pt = tuple(np.int32(pt_new.ravel()))
+        # Draw previous point in orange.
+
+        prev_point_color = (0, 165, 255)
+        new_point_color = (0, 255, 0) if inlier else (0, 0, 255)
+        line_color = (0, 255, 255)
+        cv2.circle(trajectory_frame, prev_pt, 3, prev_point_color, -1)
+        # Draw new point in green.
+        cv2.circle(trajectory_frame, new_pt, 3, new_point_color, -1)
+        # Draw line from previous to new point in yellow.
+        cv2.line(trajectory_frame, prev_pt, new_pt, line_color, 2)
     return trajectory_frame
 
 
-def calc_optical_flow(frame, prev_frame, optical_flow_state):
+def calc_optical_flow(frame, prev_frame, prev_bboxes):
     """
     Processes the current frame to:
       - Compute the optical flow.
@@ -50,27 +50,27 @@ def calc_optical_flow(frame, prev_frame, optical_flow_state):
     prev_frame_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
 
     # If no previous tracking data exists, detect features in the previous frame.
-    if optical_flow_state is None:
-        optical_flow_state = cv2.goodFeaturesToTrack(prev_frame_gray, maxCorners=500, qualityLevel=0.01,
-                                                     minDistance=7, blockSize=7)
+    camera_tracking_points = cv2.goodFeaturesToTrack(prev_frame_gray, maxCorners=2000, qualityLevel=0.01, minDistance=50, blockSize=7)
 
-    # Parameters for Lucas-Kanade optical flow.
-    lk_params = dict(winSize=(15, 15),
-                     maxLevel=2,
-                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+    bboxes_tracking_points = []
+    for _, (x_start, x_end), (y_start, y_end) in prev_bboxes:
+        box_center = np.array([[[(y_end + y_start) // 2, (x_end + x_start) // 2]]], dtype=np.float32)
+        bboxes_tracking_points.append(box_center)
+
 
     # Compute optical flow to get new positions of the tracked feature points.
+    all_tracking_points = np.concatenate((camera_tracking_points, *bboxes_tracking_points), axis=0)
     new_tracking_data, status, err = cv2.calcOpticalFlowPyrLK(
-        prev_frame_gray, frame_gray, optical_flow_state, None, **lk_params
+        prev_frame_gray, frame_gray, all_tracking_points, None, **LK_PARAMS
     )
 
     # If optical flow fails, return defaults.
     if new_tracking_data is None or status is None:
-        return optical_flow_state, prev_frame.copy(), frame.copy()
+        return all_tracking_points, prev_frame.copy(), frame.copy()
 
     # Select only the valid points where tracking was successful.
     status = status.flatten()
-    valid_prev = optical_flow_state[status == 1]
+    valid_prev = all_tracking_points[status == 1]
     valid_new = new_tracking_data[status == 1]
 
     # Estimate an affine transform that represents the global camera movement.
@@ -81,4 +81,4 @@ def calc_optical_flow(frame, prev_frame, optical_flow_state):
     trajectory_frame = _create_trajectory_frame(inliers, frame, valid_new, valid_prev)
 
     # Return the updated tracking data along with the two visualizations.
-    return new_tracking_data, affine_transform_prev_frame, trajectory_frame
+    return affine_transform_prev_frame, [], trajectory_frame
