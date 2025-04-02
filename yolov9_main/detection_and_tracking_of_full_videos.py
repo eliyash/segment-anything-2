@@ -17,6 +17,41 @@ from yolov9_main.match_bbox_in_video import transform_bbox
 from yolov9_main.optical_flow import calc_optical_flow
 
 
+def parse_opt():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--weights', nargs='+', type=str, help='model path(s)')
+    parser.add_argument('--source', type=str, help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument('--image_size', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
+    parser.add_argument('--conf_thres', type=float, default=0.25, help='confidence threshold')
+    parser.add_argument('--iou_thres', type=float, default=0.45, help='NMS IoU threshold')
+    parser.add_argument('--max_det', type=int, default=1000, help='maximum detections per image')
+    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
+    parser.add_argument('--agnostic_nms', action='store_true', help='class-agnostic NMS')
+    parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
+    parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    opt = parser.parse_args()
+    return opt
+
+
+def main():
+    data_name = 'per_signal_videos_fixed_interlacing'
+    data_folder = Path('D:/')
+    local_data_folder = Path('C:\Workspace\ChimpanzeesThesis\data_local_copy')
+    if (local_data_folder / data_name).exists():
+        source = local_data_folder / data_name
+    else:
+        source = data_folder / data_name
+
+    opt = parse_opt()
+
+
+    opt.weights = r"C:\Users\Eliahu\Downloads\best_4d8126c8128a4603bfd69daa922e8d38.pt"
+    opt.source = source.as_posix()
+    opt.conf_thres = 0.5
+    run(**vars(opt))
+
+
 def inference_image(
         input_image,
         model,
@@ -84,6 +119,19 @@ def draw_bboxs_on_frame(frame, tracked_objects):
     return new_frame
 
 
+def sharpen(image):
+    laplacian = cv2.Laplacian(image, cv2.CV_64F)
+    image = cv2.convertScaleAbs(image - laplacian)
+    return image
+
+
+def get_capture_frame(cv2_capture):
+    if cv2_capture.isOpened():
+        is_valid, image = cv2_capture.read()
+        if is_valid:
+            return sharpen(image)
+    return None
+
 @torch.no_grad()
 def run(
         source,
@@ -107,81 +155,46 @@ def run(
         )
 
     video_paths = sorted(
-        [
-             file_path for file_path in Path(source).glob('*')
-             if file_path.suffix.lower() in ['.mp4', '.avi', '.mov']
-        ]
+        [file_path for file_path in Path(source).glob('*') if file_path.suffix.lower() in ['.mp4', '.avi', '.mov']]
     )
 
     for video_path in video_paths:
-        print(time.strftime('%Y-%m-%d %H:%M:%S'), video_path)
-        cap = cv2.VideoCapture(str(video_path))
-        assert cap.isOpened(), f"Video Not Found {video_path}"
-
-        tracked_objects = {}
-        ret, prev_frame = cap.read()
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if ret:
-                detected_bboxes = inference_image_by_frame(frame)
-
-                uids = list(tracked_objects.keys())
-                prev_bboxes = [tracked_objects[uid]["last_bbox"] for uid in uids]
-                global_affine_transform, per_bbox_affine_transforms, trajectory_frame = calc_optical_flow(frame, prev_frame, prev_bboxes)
-
-                if global_affine_transform is not None:
-                    for uid, bbox_transform in zip(uids, per_bbox_affine_transforms):
-                        transform = bbox_transform if bbox_transform is not None else global_affine_transform
-                        tracked_objects[uid]["last_bbox"] = transform_bbox(tracked_objects[uid]["last_bbox"], transform)
-                        tracked_objects[uid]["kalman"].statePost = _apply_inverse_transform_to_kalman_state(tracked_objects[uid]["kalman"].statePost, transform)
-                else:
-                    print('\tlost tracking')
+        inference_video(video_path, inference_image_by_frame)
 
 
-                tracked_objects = track_objects(detected_bboxes, tracked_objects, use_kalman=True)
+def inference_video(video_path, inference_image_by_frame):
+    print(time.strftime('%Y-%m-%d %H:%M:%S'), video_path)
+    cap = cv2.VideoCapture(str(video_path))
+    assert cap.isOpened(), f"Video Not Found {video_path}"
 
-                prev_frame = frame
-                # cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
-                cv2.imshow('trajectory_frame', draw_bboxs_on_frame(trajectory_frame, tracked_objects))
-                cv2.waitKey(1)
-            else:
-                break
-        cap.release()
+    tracked_objects = {}
+    prev_frame = get_capture_frame(cap)
+    while True:
+        frame = get_capture_frame(cap)
+        if frame is None:
+            break
 
+        detected_bboxes = inference_image_by_frame(frame)
 
-def parse_opt():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, help='model path(s)')
-    parser.add_argument('--source', type=str, help='file/dir/URL/glob, 0 for webcam')
-    parser.add_argument('--image_size', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf_thres', type=float, default=0.25, help='confidence threshold')
-    parser.add_argument('--iou_thres', type=float, default=0.45, help='NMS IoU threshold')
-    parser.add_argument('--max_det', type=int, default=1000, help='maximum detections per image')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
-    parser.add_argument('--agnostic_nms', action='store_true', help='class-agnostic NMS')
-    parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
-    parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-    opt = parser.parse_args()
-    return opt
+        uids = list(tracked_objects.keys())
+        prev_bboxes = [tracked_objects[uid]["last_bbox"] for uid in uids]
+        global_affine_transform, per_bbox_affine_transforms, trajectory_frame = calc_optical_flow(frame, prev_frame, prev_bboxes)
 
+        if global_affine_transform is not None:
+            for uid, bbox_transform in zip(uids, per_bbox_affine_transforms):
+                transform = bbox_transform if bbox_transform is not None else global_affine_transform
+                tracked_objects[uid]["last_bbox"] = transform_bbox(tracked_objects[uid]["last_bbox"], transform)
+                tracked_objects[uid]["kalman"].statePost = _apply_inverse_transform_to_kalman_state(tracked_objects[uid]["kalman"].statePost, transform)
+        else:
+            print('\tlost tracking')
 
-def main():
-    data_name = 'per_signal_videos_fixed_interlacing'
-    data_folder = Path('D:/')
-    local_data_folder = Path('C:\Workspace\ChimpanzeesThesis\data_local_copy')
-    if (local_data_folder / data_name).exists():
-        source = local_data_folder / data_name
-    else:
-        source = data_folder / data_name
+        tracked_objects = track_objects(detected_bboxes, tracked_objects, use_kalman=True)
+        prev_frame = frame
 
-    opt = parse_opt()
-
-
-    opt.weights = r"C:\Users\Eliahu\Downloads\best_4d8126c8128a4603bfd69daa922e8d38.pt"
-    opt.source = source.as_posix()
-    opt.conf_thres = 0.5
-    run(**vars(opt))
+        # cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
+        cv2.imshow('trajectory_frame', draw_bboxs_on_frame(trajectory_frame, tracked_objects))
+        cv2.waitKey(1)
+    cap.release()
 
 
 if __name__ == "__main__":
