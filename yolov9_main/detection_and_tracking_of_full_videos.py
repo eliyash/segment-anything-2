@@ -1,21 +1,24 @@
 import argparse
 import hashlib
+import json
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
 
+from sklearn.decomposition import PCA
 from models.common import DetectMultiBackend
 from utils.general import non_max_suppression, scale_boxes
 from utils.torch_utils import select_device
 from utils.augmentations import letterbox
+from yolov9_main.embedding_plot import draw_embeddings
 from yolov9_main.kalman_filter import track_objects, _predict_center, \
     _apply_inverse_transform_to_kalman_state
 from yolov9_main.match_bbox_in_video import transform_bbox
 from yolov9_main.optical_flow import calc_optical_flow
-
 
 def parse_opt():
     parser = argparse.ArgumentParser()
@@ -161,14 +164,60 @@ def run(
     for video_path in video_paths:
         inference_video(video_path, inference_image_by_frame)
 
+# Initialize SIFT detector (requires OpenCV contrib)
+NUMBER_OF_FEATURES = 16
+sift = cv2.SIFT.create()
+
+pca = PCA(n_components=NUMBER_OF_FEATURES)
+def get_sift_embeddings(frame):
+    # Convert the ROI to grayscale (SIFT works on single channel images)
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Detect keypoints and compute descriptors
+    keypoints, descriptors = sift.detectAndCompute(gray_frame, None)
+
+    # If no keypoints are found, return a zero vector
+    if descriptors is None or descriptors.shape[0] == 0:
+        return np.zeros(128, dtype=np.float32)
+
+    # Aggregate the descriptors into a single embedding (e.g., by averaging)
+    embedding = np.mean(descriptors, axis=0)
+
+    # Normalize the embedding to unit length
+    norm = np.linalg.norm(embedding)
+    if norm > 0:
+        embedding = embedding / norm
+    return embedding
+
+
+def crop_with_padding_from_bounds(frame, x_start, x_end, y_start, y_end, pad_percent=0.15, pad_min=20):
+    image_w, image_h = frame.shape[:2]
+
+    w = x_end - x_start
+    h = y_end - y_start
+
+    pad_w = int(max(w * pad_percent, pad_min))
+    pad_h = int(max(h * pad_percent, pad_min))
+
+    x1 = max(0, x_start - pad_w)
+    x2 = min(image_w, x_end + pad_w)
+    y1 = max(0, y_start - pad_h)
+    y2 = min(image_h, y_end + pad_h)
+
+    return frame[x1:x2, y1:y2]
+
 
 def inference_video(video_path, inference_image_by_frame):
     print(time.strftime('%Y-%m-%d %H:%M:%S'), video_path)
+    out_folder = Path(r'C:\Workspace\ChimpanzeesThesis\video_output')
+    out_folder.mkdir(exist_ok=True)
     cap = cv2.VideoCapture(str(video_path))
     assert cap.isOpened(), f"Video Not Found {video_path}"
 
+    accumulated_tracked_objects = defaultdict(dict)
     tracked_objects = {}
     prev_frame = get_capture_frame(cap)
+    frame_index = 0
     while True:
         frame = get_capture_frame(cap)
         if frame is None:
@@ -188,13 +237,23 @@ def inference_video(video_path, inference_image_by_frame):
         else:
             print('\tlost tracking')
 
-        tracked_objects = track_objects(detected_bboxes, tracked_objects, use_kalman=True)
+        tracked_objects = track_objects(detected_bboxes, tracked_objects, use_kalman=True, max_missing_frames=1)
+
+        for uid, data in tracked_objects.items():
+            _, (x_start, x_end), (y_start, y_end) = data["last_bbox"]
+            accumulated_tracked_objects[uid][frame_index] = data["last_bbox"]
+            uid_folder = out_folder / uid
+            uid_folder.mkdir(exist_ok=True)
+            cv2.imwrite(str(uid_folder / f'{frame_index}.png'), crop_with_padding_from_bounds(frame, x_start, x_end, y_start, y_end))
+
         prev_frame = frame
 
         # cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
-        cv2.imshow('trajectory_frame', draw_bboxs_on_frame(trajectory_frame, tracked_objects))
-        cv2.waitKey(1)
+        # cv2.imshow('trajectory_frame', draw_bboxs_on_frame(trajectory_frame, tracked_objects))
+        # cv2.waitKey(1)
+        frame_index += 1
     cap.release()
+    (out_folder / f'accumulated_tracked_objects_{video_path.stem}.json').write_text(json.dumps(accumulated_tracked_objects, indent=4))
 
 
 if __name__ == "__main__":

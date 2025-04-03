@@ -2,9 +2,8 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from yolov9_main.match_bbox_in_video import generate_uid, transform_bbox
+from yolov9_main.match_bbox_in_video import generate_uid
 
-MAX_NUMBER_OF_MISSING_FRAMES = 16
 
 def _enforce_float32_kalman(kf):
     kf.transitionMatrix = kf.transitionMatrix.astype(np.float32)
@@ -89,7 +88,7 @@ def match_predictions_to_detections(tracked_objects, detections, use_kalman, dis
 
     return matches, list(unmatched_tracks), list(unmatched_detections)
 
-def update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatched_detections):
+def update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatched_detections, max_missing_frames):
     updated_objects = {}
 
     # Update matched
@@ -104,7 +103,7 @@ def update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatc
     for uid in unmatched_tracks:
         obj = tracked_objects[uid]
         obj["missing_frames"] += 1
-        if obj["missing_frames"] <= MAX_NUMBER_OF_MISSING_FRAMES:
+        if obj["missing_frames"] <= max_missing_frames:
             updated_objects[uid] = obj  # keep aging ones
 
     # Add new
@@ -120,9 +119,9 @@ def update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatc
 
     return updated_objects
 
-def track_objects(detections, tracked_objects, use_kalman):
+def track_objects(detections, tracked_objects, use_kalman, max_missing_frames):
     matches, unmatched_tracks, unmatched_detections = match_predictions_to_detections(tracked_objects, detections, use_kalman)
-    return update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatched_detections)
+    return update_tracks(tracked_objects, detections, matches, unmatched_tracks, unmatched_detections, max_missing_frames)
 
 def _apply_inverse_transform_to_kalman_state(state_orig, T_inv):
     state = state_orig.copy()
