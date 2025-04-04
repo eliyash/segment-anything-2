@@ -24,6 +24,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, help='model path(s)')
     parser.add_argument('--source', type=str, help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument('--output_folder', type=str, help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--image_size', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf_thres', type=float, default=0.25, help='confidence threshold')
     parser.add_argument('--iou_thres', type=float, default=0.45, help='NMS IoU threshold')
@@ -48,8 +49,11 @@ def main():
 
     opt = parse_opt()
 
+    output_folder = Path(r'C:\Workspace\ChimpanzeesThesis\signal_video_output')
 
-    opt.weights = r"C:\Users\Eliahu\Downloads\best_4d8126c8128a4603bfd69daa922e8d38.pt"
+    opt.weights = (output_folder / "best_4d8126c8128a4603bfd69daa922e8d38.pt").as_posix()
+    # opt.weights = (output_folder / "best_28113c64a97f4b4f9f593cc005e8a891.pt").as_posix()
+    opt.output_folder = output_folder.as_posix()
     opt.source = source.as_posix()
     opt.conf_thres = 0.5
     run(**vars(opt))
@@ -138,6 +142,7 @@ def get_capture_frame(cv2_capture):
 @torch.no_grad()
 def run(
         source,
+        output_folder,
         weights,  # model.pt path(s)
         image_size=640,  # inference size (pixels)
         conf_thres=0.25,  # confidence threshold
@@ -149,6 +154,9 @@ def run(
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
 ):
+    face_tracking_output = Path(output_folder) / 'faces_tracking'
+    face_tracking_output.mkdir(exist_ok=True)
+
     device = select_device(device)
     model = DetectMultiBackend(weights, device=device, dnn=dnn, data=None, fp16=half)
 
@@ -162,7 +170,7 @@ def run(
     )
 
     for video_path in video_paths:
-        inference_video(video_path, inference_image_by_frame)
+        inference_video(video_path, inference_image_by_frame, face_tracking_output)
 
 # Initialize SIFT detector (requires OpenCV contrib)
 NUMBER_OF_FEATURES = 16
@@ -207,10 +215,9 @@ def crop_with_padding_from_bounds(frame, x_start, x_end, y_start, y_end, pad_per
     return frame[x1:x2, y1:y2]
 
 
-def inference_video(video_path, inference_image_by_frame):
+def inference_video(video_path, inference_image_by_frame, output_folder, show_frames=True, save_data=False):
+    assert show_frames or save_data, "Either show_frames or save_data should be True"
     print(time.strftime('%Y-%m-%d %H:%M:%S'), video_path)
-    out_folder = Path(r'C:\Workspace\ChimpanzeesThesis\video_output')
-    out_folder.mkdir(exist_ok=True)
     cap = cv2.VideoCapture(str(video_path))
     assert cap.isOpened(), f"Video Not Found {video_path}"
 
@@ -239,21 +246,24 @@ def inference_video(video_path, inference_image_by_frame):
 
         tracked_objects = track_objects(detected_bboxes, tracked_objects, use_kalman=True, max_missing_frames=1)
 
-        for uid, data in tracked_objects.items():
-            _, (x_start, x_end), (y_start, y_end) = data["last_bbox"]
-            accumulated_tracked_objects[uid][frame_index] = data["last_bbox"]
-            uid_folder = out_folder / uid
-            uid_folder.mkdir(exist_ok=True)
-            cv2.imwrite(str(uid_folder / f'{frame_index}.png'), crop_with_padding_from_bounds(frame, x_start, x_end, y_start, y_end))
+        if save_data:
+            for uid, data in tracked_objects.items():
+                _, (x_start, x_end), (y_start, y_end) = data["last_bbox"]
+                accumulated_tracked_objects[uid][frame_index] = data["last_bbox"]
+                uid_folder = output_folder / uid
+                uid_folder.mkdir(exist_ok=True)
+                cv2.imwrite(str(uid_folder / f'{frame_index}.png'), crop_with_padding_from_bounds(frame, x_start, x_end, y_start, y_end))
 
         prev_frame = frame
 
-        # cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
-        # cv2.imshow('trajectory_frame', draw_bboxs_on_frame(trajectory_frame, tracked_objects))
-        # cv2.waitKey(1)
+        if show_frames:
+            # cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
+            cv2.imshow('trajectory_frame', draw_bboxs_on_frame(trajectory_frame, tracked_objects))
+            cv2.waitKey(1)
         frame_index += 1
     cap.release()
-    (out_folder / f'accumulated_tracked_objects_{video_path.stem}.json').write_text(json.dumps(accumulated_tracked_objects, indent=4))
+    if save_data:
+        (output_folder / f'accumulated_tracked_objects_{video_path.stem}.json').write_text(json.dumps(accumulated_tracked_objects, indent=4))
 
 
 if __name__ == "__main__":
