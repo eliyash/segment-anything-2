@@ -69,7 +69,7 @@ def save_split_and_save_dataset_in_yolo_format(new_dataset_folder, original_imag
                     cv2.imwrite(str(image_path), image)
                 else:
                     shutil.copy(str(original_images_folder / relative_orig_image_path), str(image_path))
-                new_image_paths.append(image_path.relative_to(new_dataset_folder))
+            new_image_paths.append(image_path.relative_to(new_dataset_folder))
 
         posix_relative_paths = [f'./{path.as_posix()}' for path in new_image_paths]
         (new_dataset_folder / f"{dataset_type}.txt").write_text("\n".join(posix_relative_paths) + "\n")
