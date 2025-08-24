@@ -10,15 +10,15 @@ import numpy as np
 import torch
 
 from sklearn.decomposition import PCA
-
 from models.common import DetectMultiBackend
+from use_seganymo_for_tracking import get_depth_config, prepare_tracking, load_tracks_frame, load_depth_frame
 from utils.general import non_max_suppression, scale_boxes
 from utils.torch_utils import select_device
 from utils.augmentations import letterbox
+from yolov9_main.embedding_plot import draw_embeddings
 from yolov9_main.kalman_filter import track_objects, _predict_center, \
     _apply_inverse_transform_to_kalman_state
 from yolov9_main.match_bbox_in_video import transform_bbox
-from yolov9_main.monkey_names_with_classes import ALL_CLASS_INDEX_TO_NAMES, ALL_NAMES_TO_CLASS_INDEX
 from yolov9_main.optical_flow import calc_optical_flow
 
 def parse_opt():
@@ -52,8 +52,8 @@ def main():
 
     output_folder = Path(r'C:\Workspace\ChimpanzeesThesis\signal_video_output')
 
-    # opt.weights = (output_folder / "best_4d8126c8128a4603bfd69daa922e8d38.pt").as_posix()
-    opt.weights = (output_folder / "best_28113c64a97f4b4f9f593cc005e8a891.pt").as_posix()
+    opt.weights = (output_folder / "best_4d8126c8128a4603bfd69daa922e8d38.pt").as_posix()
+    # opt.weights = (output_folder / "best_28113c64a97f4b4f9f593cc005e8a891.pt").as_posix()
     opt.output_folder = output_folder.as_posix()
     opt.source = source.as_posix()
     opt.conf_thres = 0.5
@@ -115,18 +115,11 @@ def uid_to_color(uid):
 def draw_bboxs_on_frame(frame, tracked_objects):
     new_frame = frame.copy()
     for uid, data in tracked_objects.items():
-        (cls_index, (xs, xe), (ys, ye)) = data['last_bbox']
-        class_name = ALL_CLASS_INDEX_TO_NAMES[cls_index]
+        (cls, (xs, xe), (ys, ye)) = data['last_bbox']
         color = uid_to_color(uid)
         cv2.rectangle(new_frame, (ys, xs), (ye, xe), color, 2)
-
-        l_thickness = 2
-        text = f'{uid}'
-        if data['missing_frames'] > 0:
-            l_thickness = 1
-            text = f'{uid}_missing'
-        elif class_name.startswith('CHIMP_HEAD_'):
-            text = f'{uid}_{class_name[len("CHIMP_HEAD_"):].lower()}'
+        l_thickness = 1 if data['missing_frames'] > 0 else 2
+        text = f'missing_{uid}' if data['missing_frames'] > 0 else uid
         cv2.putText(new_frame, text, (ys, xs + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, color, l_thickness)
 
         x, y = _predict_center(data["kalman"]).astype(int)
@@ -223,44 +216,29 @@ def crop_with_padding_from_bounds(frame, x_start, x_end, y_start, y_end, pad_per
     return frame[x1:x2, y1:y2]
 
 
-def read_face_annotations(output_folder, video_path):
-    data_file = output_folder / f'accumulated_tracked_objects_{video_path.stem}.json'
-    accumulated_tracked_objects = json.loads(data_file.read_text())
-    # per_frame_data = defaultdict(dict)
-    per_frame_data = defaultdict(list)
-    for uid, bboxes_by_frame_ind in accumulated_tracked_objects.items():
-        for frame_ind, bbox in bboxes_by_frame_ind.items():
-            # per_frame_data[int(frame_ind)][uid] = bbox
-            per_frame_data[int(frame_ind)].append(bbox)
-    return per_frame_data
-
-
-def inference_video(video_path, get_chimp_body_and_head, output_folder, show_frames=True, save_data=False):
+def inference_video(video_path, inference_image_by_frame, output_folder, show_frames=True, save_data=False):
     assert show_frames or save_data, "Either show_frames or save_data should be True"
     print(time.strftime('%Y-%m-%d %H:%M:%S'), video_path)
+
+    depth_dir, depth_ext, depth_pad = get_depth_config(video_path, True)
+    track_base = video_path.parent / "bootstapir"
+    frame_map, color_map = prepare_tracking(track_base / video_path.stem)
+
     cap = cv2.VideoCapture(str(video_path))
     assert cap.isOpened(), f"Video Not Found {video_path}"
-
-    all_face_tracked_objects = read_face_annotations(output_folder, video_path)
-    def get_chimp_faces(index):
-        return all_face_tracked_objects[index]
-
-    non_head_class = [ALL_NAMES_TO_CLASS_INDEX['CHIMP_BODY']]
-    def is_detection_is_head(detection):
-        return detection[0] not in non_head_class
 
     accumulated_tracked_objects = defaultdict(dict)
     tracked_objects = {}
     prev_frame = get_capture_frame(cap)
-    frame_index = 0
+    frame_index = 1
     while True:
         frame = get_capture_frame(cap)
         if frame is None:
             break
 
-        head_body_detected_bboxes = get_chimp_body_and_head(frame)
-        head_detected_bboxes = list(filter(is_detection_is_head, head_body_detected_bboxes))
-        chimp_faces_bboxes = get_chimp_faces(frame_index)
+        detected_bboxes = inference_image_by_frame(frame)
+        # depth_frame = load_depth_frame(frame_index, depth_dir, depth_ext, depth_pad, frame.shape[:2])
+        track_frame = load_tracks_frame(frame_index, frame, frame_map, color_map)
 
         uids = list(tracked_objects.keys())
         prev_bboxes = [tracked_objects[uid]["last_bbox"] for uid in uids]
@@ -274,11 +252,11 @@ def inference_video(video_path, get_chimp_body_and_head, output_folder, show_fra
         else:
             print('\tlost tracking')
 
-        tracked_objects = track_objects(head_detected_bboxes, tracked_objects, use_kalman=True, max_missing_frames=1)
+        tracked_objects = track_objects(detected_bboxes, tracked_objects, use_kalman=True, max_missing_frames=1)
 
         if save_data:
             for uid, data in tracked_objects.items():
-                class_name, (x_start, x_end), (y_start, y_end) = data["last_bbox"]
+                _, (x_start, x_end), (y_start, y_end) = data["last_bbox"]
                 accumulated_tracked_objects[uid][frame_index] = data["last_bbox"]
                 uid_folder = output_folder / uid
                 uid_folder.mkdir(exist_ok=True)
@@ -289,6 +267,8 @@ def inference_video(video_path, get_chimp_body_and_head, output_folder, show_fra
         if show_frames:
             # cv2.imshow('frame', draw_bboxs_on_frame(frame, tracked_objects))
             cv2.imshow('trajectory_frame', draw_bboxs_on_frame(trajectory_frame, tracked_objects))
+            # cv2.imshow('depth_frame', depth_frame)
+            cv2.imshow('track_frame', track_frame)
             cv2.waitKey(1)
         frame_index += 1
     cap.release()
